@@ -150,6 +150,7 @@ def split_dataframes(dataframes, log_dir):
 
 
         # Stampa il numero di righe nei segmenti per verificare
+        '''
         print(f"{participant_id}: video1={len(df_video1)}, game1={len(df_game1)}, game2={len(df_game2)}")
 
         segmented_dataframes[participant_id] = [df_video1, df_game1, df_game2]
@@ -194,6 +195,6 @@ def split_dataframes(dataframes, log_dir):
             plt.xticks(rotation=45)  # Ruota i tick dell'asse X per una visualizzazione migliore
             plt.tight_layout()  # Per evitare sovrapposizioni
             plt.show()
-
+        '''
     
     return segmented_dataframes
