@@ -3,6 +3,7 @@ import os
 import json
 import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
 
 
 def create_power_by_band_dataframes(json_file_paths):
@@ -110,13 +111,10 @@ def split_dataframes(dataframes, log_dir):
             ts_third_igeq_end = timestamps["terzo iGEQ terminato, gioco ripreso"]
             ts_fourth_igeq_start = timestamps["quarto iGEQ mostrato, gioco messo in pausa"]
             ts_fourth_igeq_end = timestamps["quarto iGEQ terminato, gioco ripreso"]
-            
-            
          
         except KeyError as e:
             print(f"Timestamp mancante nel log di {participant_id}: {e}")
             continue
-
         
         # Stampa i valori prima della suddivisione
         print(f"{participant_id}: df Timestamp min = {df['Timestamp'].min()}, max = {df['Timestamp'].max()}")
@@ -128,14 +126,13 @@ def split_dataframes(dataframes, log_dir):
         print(f"{participant_id}: ts_video2_end={ts_third_igeq_start}, ts_game2_end={ts_third_igeq_end}")
         print(f"{participant_id}: ts_video2_end={ts_fourth_igeq_start}, ts_game2_end={ts_fourth_igeq_end}")
         
-        
-
         # Suddivisione del DataFrame in base ai timestamp con tolleranza di 1 secondo
         tolerance = 1000  # tolleranza di 1000 millisecondi (1 secondo)
         df_video1 = df[(df["Timestamp"] >= ts_video1_start - tolerance) & (df["Timestamp"] <= ts_video1_end + tolerance)]
         df_game1 = df[(df["Timestamp"] >= ts_game1_start - tolerance) & (df["Timestamp"] <= ts_game1_end + tolerance)]
         df_game2 = df[(df["Timestamp"] >= ts_video2_end - tolerance) & (df["Timestamp"] <= ts_game2_end + tolerance)]
-        
+
+        '''
         # Esclusione degli intervalli di tempo in cui il partecipante sta compilando l'igeq
         df_game1 = df_game1[~df_game1["Timestamp"].between(ts_first_igeq_start, ts_first_igeq_end)]
         df_game1 = df_game1[~df_game1["Timestamp"].between(ts_second_igeq_start, ts_second_igeq_end)]
@@ -146,15 +143,28 @@ def split_dataframes(dataframes, log_dir):
         df_game2 = df_game2[~df_game2["Timestamp"].between(ts_second_igeq_start, ts_second_igeq_end)]
         df_game2 = df_game2[~df_game2["Timestamp"].between(ts_third_igeq_start, ts_third_igeq_end)]
         df_game2 = df_game2[~df_game2["Timestamp"].between(ts_fourth_igeq_start, ts_fourth_igeq_end)]
-
-
-
-        # Stampa il numero di righe nei segmenti per verificare
         '''
-        print(f"{participant_id}: video1={len(df_video1)}, game1={len(df_game1)}, game2={len(df_game2)}")
+        # Stampa il numero di righe nei segmenti per verificare
+        #print(f"{participant_id}: video1={len(df_video1)}, game1={len(df_game1)}, game2={len(df_game2)}")
+
+        def extract_interval(df, start, end):
+            return df[(df["Timestamp"] >= start) & (df["Timestamp"] <= end)]
+        
+        intervals_game1 = [
+            extract_interval(df_game1, ts_game1_start, ts_first_igeq_start),
+            extract_interval(df_game1, ts_first_igeq_end, ts_second_igeq_start),
+            extract_interval(df_game1, ts_second_igeq_end, ts_game1_end)
+        ]
+
+        intervals_game2 = [
+            extract_interval(df_game2, ts_video2_end, ts_third_igeq_start),
+            extract_interval(df_game2, ts_third_igeq_end, ts_fourth_igeq_start),
+            extract_interval(df_game2, ts_fourth_igeq_end, ts_game2_end)
+        ]
 
         segmented_dataframes[participant_id] = [df_video1, df_game1, df_game2]
         
+        '''
         # Crea i plot per ogni canale (sia per game1 che per game2 nello stesso grafico)
         for i, channel in enumerate(channels):
             plt.figure(figsize=(10, 6))  # Un nuovo "foglio" per ogni canale
@@ -195,6 +205,41 @@ def split_dataframes(dataframes, log_dir):
             plt.xticks(rotation=45)  # Ruota i tick dell'asse X per una visualizzazione migliore
             plt.tight_layout()  # Per evitare sovrapposizioni
             plt.show()
-        '''
+            '''
+        def plot_heatmaps(intervals, title):
+            fig, axes = plt.subplots(2, 3, figsize=(36, 16), gridspec_kw={'height_ratios': [3, 1]})
+            fig.suptitle(title, fontsize=20)
+            
+            for i, df_interval in enumerate(intervals):
+                if df_interval.empty:
+                    continue
+                
+                heatmap_data = np.zeros((len(waves), len(channels)))
+                for w_idx, wave in enumerate(waves):
+                    if wave in df_interval.columns:
+                        wave_values = np.array(df_interval[wave].tolist())
+                        if wave_values.shape[1] == len(channels):
+                            heatmap_data[w_idx, :] = wave_values.mean(axis=0)
+                
+                sns.heatmap(heatmap_data, xticklabels=channels, yticklabels=waves, ax=axes[0, i], cmap='Reds', annot=True, square=True, fmt=".1f", annot_kws={"size": 8})
+                axes[0, i].set_yticklabels(axes[0, i].get_yticklabels(), rotation=45, ha="right")
+                axes[0, i].set_title(f"Intervallo {i+1}")
+                
+                # Grafico lineare sotto la heatmap con tempo normalizzato in minuti (0-5)
+                timestamps = df_interval["Timestamp"].values
+                time_in_minutes = (timestamps - timestamps[0]) / (timestamps[-1] - timestamps[0]) * 5  # Normalizza da 0 a 5 minuti
+                mean_wave_values = df_interval[waves].applymap(np.mean).values
+                for w_idx, wave in enumerate(waves):
+                    axes[1, i].plot(time_in_minutes, mean_wave_values[:, w_idx], label=wave)
+                
+                axes[1, i].set_xlabel("Tempo (minuti)")
+                axes[1, i].set_ylabel("EEG Mean Value")
+                axes[1, i].legend()
+                axes[1, i].set_title(f"Distribuzione EEG - Intervallo {i+1}")
+            
+            plt.show()
+        
+        plot_heatmaps(intervals_game1, f"Partecipante {participant_id} - Primo Gioco")
+        plot_heatmaps(intervals_game2, f"Partecipante {participant_id} - Secondo Gioco")
     
     return segmented_dataframes

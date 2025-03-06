@@ -19,7 +19,8 @@ def main():
     df_power_by_band = dfe.create_power_by_band_dataframes(processed_data)
 
     segmented_dataframes = dfe.split_dataframes(df_power_by_band, log_file_path)
-    
+
+
     '''
     output_dir = "output_segmented_csv"
     os.makedirs(output_dir, exist_ok=True)  # Crea la cartella se non esiste
