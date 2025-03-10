@@ -6,7 +6,6 @@ import pandas as pd
 import os
 import matplotlib.pyplot as plt
 import numpy as np
-
     
 def main():
     path_to_neurosity = "D://Git//PARTECIPANTI Studio di Tesi - Dati Acquisizioni//rawDatasForPreProcessing//EEG"
@@ -28,28 +27,28 @@ def main():
     # aggregati con i tre tipi di calcolo delle ampiezze
     aggregated_rms = dfe.compute_aggregated_rms_amplitudes(normalized_segmented_dataframes, log_file_path)
     aggregated_ptp = dfe.compute_aggregated_ptp_amplitudes(normalized_segmented_dataframes, log_file_path)
-    aggregated_bs = dfe.compute_aggregated_band_specific_amplitudes(normalized_segmented_dataframes, log_file_path)
+    aggregated_bs = dfe.compute_band_specific_ptp_amplitudes(normalized_segmented_dataframes, log_file_path)
 
     df_noto_dict, df_ignoto_dict = quest.carica_questionari(path_to_quest)
 
 
     # Calcolo delle correlazioni per RMS
-    correlation_rms = corr.kendall_corr_with_p(aggregated_rms, df_noto_dict, df_ignoto_dict, "rms")
+    #correlation_rms = corr.kendall_corr_with_p(aggregated_rms, df_noto_dict, df_ignoto_dict, "rms")
 
     # Calcolo delle correlazioni per Peak-to-Peak
-    correlation_ptp = corr.kendall_corr_with_p(aggregated_ptp, df_noto_dict, df_ignoto_dict, "ptp")
+    #correlation_bs = corr.spearman_corr_with_p(aggregated_bs, df_noto_dict, df_ignoto_dict, "ptp")
 
     # Calcolo delle correlazioni per Band-Specific
-    correlation_band = corr.kendall_corr_with_p(aggregated_bs, df_noto_dict, df_ignoto_dict, "band")
+    #correlation_band = corr.spearman_corr_with_p(aggregated_bs, df_noto_dict, df_ignoto_dict, "band")
 
-    corr.export_correlation_and_pvalue_tables(correlation_band, "correlation_table_noto.csv", "correlation_table_ignoto.csv")
+    #corr.export_correlation_and_pvalue_tables(correlation_bs, "correlation_table_noto.csv", "correlation_table_ignoto.csv")
 
     '''
-    correlation_file = "C://Users//raffa//OneDrive//Desktop//Tesi//PLOTS//CORR_EEG//band//correlation_table_ignoto.csv"
-    pvalue_file = "C://Users//raffa//OneDrive//Desktop//Tesi//PLOTS//CORR_EEG//band//correlation_table_ignoto_pvalues.csv"
+    correlation_file = "C://Users//raffa//OneDrive//Desktop//Tesi//PLOTS//CORR_EEG//Intervalli cambiati//band//correlation_table_ignoto.csv"
+    pvalue_file = "C://Users//raffa//OneDrive//Desktop//Tesi//PLOTS//CORR_EEG//Intervalli cambiati//band//correlation_table_ignoto_pvalues.csv"
     corr.filter_significant_correlations(correlation_file, pvalue_file, "filtered_correlation.csv")
 
-    
+
     # Salvare ogni DataFrame normalizzato come CSV
     for participant_id, dfs in normalized_segmented_dataframes.items():
         df_game1_norm, df_game2_norm = dfs
