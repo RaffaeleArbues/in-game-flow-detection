@@ -4,6 +4,7 @@ import json
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+import ast  # Per convertire le stringhe che contengono liste in liste reali
 
 
 def create_power_by_band_dataframes(json_file_paths):
@@ -50,6 +51,44 @@ def create_power_by_band_dataframes(json_file_paths):
 
     return dataframes
 
+
+def extract_timestamps_from_log(log_file_path, participant_id):
+    """
+    Estrae i timestamp rilevanti da un file di log.
+
+    Parametri:
+        log_file_path (str): Percorso del file di log.
+        participant_id (str): ID del partecipante.
+
+    Ritorna:
+        dict: Dizionario con i timestamp estratti o None se il file non esiste.
+    """
+    if not os.path.exists(log_file_path):
+        print(f"File di log non trovato per {participant_id}")
+        return None
+
+    timestamps = {}
+    with open(log_file_path, 'r') as log_file:
+        log_lines = log_file.readlines()
+
+    for line in log_lines:
+        if "Timestamp UNIX:" in line:
+            parts = line.strip().split(" - ")
+            if len(parts) < 3:
+                print(f"Formato non valido nel log di {participant_id}: {line.strip()}")
+                continue  # Salta questa riga
+
+            event = parts[1]
+            timestamp_parts = parts[2].split(": ")
+            if len(timestamp_parts) < 2:
+                print(f"Timestamp mancante nel log di {participant_id}: {line.strip()}")
+                continue  # Salta questa riga
+
+            timestamp = int(timestamp_parts[1]) * 1000  # Converte il timestamp in millisecondi
+            timestamps[event] = timestamp
+
+    return timestamps
+
 def split_dataframes(dataframes, log_dir):
     """
     Divide i DataFrame dei partecipanti in tre segmenti basati sui timestamp dei file di log.
@@ -67,32 +106,13 @@ def split_dataframes(dataframes, log_dir):
 
     for participant_id, df in dataframes.items():
         log_file_path = os.path.join(log_dir, f"{participant_id}.txt")
-        if not os.path.exists(log_file_path):
-            print(f"File di log non trovato per {participant_id}")
-            continue
-        
-        # Legge il file di log e trova i timestamp rilevanti
-        with open(log_file_path, 'r') as log_file:
-            log_lines = log_file.readlines()
-        
-        timestamps = {}
-        for line in log_lines:
-            if "Timestamp UNIX:" in line:
-                parts = line.strip().split(" - ")
-                if len(parts) < 3:
-                    print(f"Formato non valido nel log di {participant_id}: {line.strip()}")
-                    continue  # Salta questa riga
-            
-                event = parts[1]
-                timestamp_parts = parts[2].split(": ")
-                if len(timestamp_parts) < 2:
-                    print(f"Timestamp mancante nel log di {participant_id}: {line.strip()}")
-                    continue  # Salta questa riga
 
-                timestamp = int(timestamp_parts[1]) * 1000  # Converte il timestamp in millisecondi
-                timestamps[event] = timestamp
-        
-        # Stampa i timestamp estratti
+        # Estrarre i timestamp dal log usando la funzione esterna
+        timestamps = extract_timestamps_from_log(log_file_path, participant_id)
+        if timestamps is None:
+            continue
+
+        # Stampa i timestamp estratti per debug
         print(f"Timestamp per {participant_id}: {timestamps}")
 
         # Recupera i timestamp rilevanti
@@ -205,7 +225,8 @@ def split_dataframes(dataframes, log_dir):
             plt.xticks(rotation=45)  # Ruota i tick dell'asse X per una visualizzazione migliore
             plt.tight_layout()  # Per evitare sovrapposizioni
             plt.show()
-            '''
+
+        
         def plot_heatmaps(intervals, title):
             fig, axes = plt.subplots(2, 3, figsize=(36, 16), gridspec_kw={'height_ratios': [3, 1]})
             fig.suptitle(title, fontsize=20)
@@ -241,5 +262,373 @@ def split_dataframes(dataframes, log_dir):
         
         plot_heatmaps(intervals_game1, f"Partecipante {participant_id} - Primo Gioco")
         plot_heatmaps(intervals_game2, f"Partecipante {participant_id} - Secondo Gioco")
+        '''
     
     return segmented_dataframes
+
+def normalize_eeg(segmented_dataframes):
+    """
+    Normalizza df_game1 e df_game2 per ogni partecipante utilizzando la Z-score normalization
+    calcolata sugli ultimi 30 secondi di df_video1. 
+
+    Parametri:
+    segmented_dataframes (dict): Dizionario contenente i DataFrame di ciascun partecipante nel formato: {participant_id: [df_video1, df_game1, df_game2]}
+
+    Ritorna:
+    dict: Dizionario con i DataFrame df_game1 e df_game2 normalizzati per ogni partecipante.
+    """
+    normalized_dataframes = {}
+
+    for participant_id, dfs in segmented_dataframes.items():
+        df_video1, df_game1, df_game2 = dfs
+
+        # Creare una copia per evitare modifiche in-place
+        df_video1 = df_video1.copy()
+
+        # Assicuriamoci che il Timestamp sia numerico e convertiamo da millisecondi a secondi
+        df_video1["Timestamp"] = pd.to_numeric(df_video1["Timestamp"], errors="coerce") / 1000
+
+        # Determinare il timestamp massimo
+        max_time = df_video1["Timestamp"].max()
+
+        # Estrarre solo gli ultimi 30 secondi eliminando il primo minuto e mezzo
+        baseline_df = df_video1[df_video1["Timestamp"] >= (max_time - 30)].copy()
+        
+
+        # Debugging: Stampiamo i dati della baseline per verificare
+        if baseline_df.empty:
+            print(f"La baseline è vuota per il partecipante {participant_id}. Salto la normalizzazione.")
+            continue
+        else:
+            print(f"Baseline trovata per il partecipante {participant_id}, contiene {len(baseline_df)} righe.")
+
+        # Colonne EEG
+        eeg_columns = ['alpha', 'beta', 'delta', 'gamma', 'theta']
+
+        # Convertire le stringhe in liste di numeri
+        for col in eeg_columns:
+            baseline_df[col] = baseline_df[col].apply(lambda x: np.array(ast.literal_eval(x)) if isinstance(x, str) else np.array(x))
+
+        # Calcolare la media e deviazione standard della baseline per ogni canale EEG (otteniamo 8 valori per banda)
+        baseline_means = {col: np.mean(np.vstack(baseline_df[col]), axis=0) for col in eeg_columns}
+        baseline_stds = {col: np.std(np.vstack(baseline_df[col]), axis=0) for col in eeg_columns}
+
+        # Funzione per normalizzare un DataFrame EEG con Z-score normalization
+        def normalize_df(df):
+            df_norm = df.copy()
+
+            # Assicuriamoci che Timestamp sia numerico e convertiamo da millisecondi a secondi
+            df_norm["Timestamp"] = pd.to_numeric(df_norm["Timestamp"], errors="coerce") / 1000.0
+
+            # Convertiamo le stringhe in liste di numeri per ogni colonna EEG
+            for col in eeg_columns:
+                df_norm[col] = df_norm[col].apply(lambda x: np.array(ast.literal_eval(x)) if isinstance(x, str) else np.array(x))
+
+            # Applichiamo la Z-score normalization "element-wise" (su tutti gli 8 valori per banda)
+            for col in eeg_columns:
+                df_norm[col] = df_norm[col].apply(lambda x: (x - baseline_means[col]) / baseline_stds[col] if np.any(baseline_stds[col] != 0) else x)
+
+            return df_norm
+
+        # Normalizzare df_game1 e df_game2
+        df_game1_norm = normalize_df(df_game1)
+        df_game2_norm = normalize_df(df_game2)
+
+        # Salvare i DataFrame normalizzati
+        normalized_dataframes[participant_id] = [df_game1_norm, df_game2_norm]
+
+    return normalized_dataframes
+
+def compute_aggregated_rms_amplitudes(normalized_segmented_dataframes, log_dir):
+    """
+    Calcola la RMS Amplitude aggregata per ogni banda EEG e ogni canale,
+    restituendo tre righe per ogni gioco (sei righe in totale per partecipante).
+
+    Parametri:
+    normalized_segmented_dataframes (dict): Dizionario contenente i DataFrame normalizzati per ogni partecipante.
+                                            I timestamp nei DataFrame sono in **secondi**.
+    log_dir (str): Percorso della cartella dei log. I timestamp nei log sono in **millisecondi**.
+
+    Ritorna:
+    dict: Dizionario con i DataFrame di RMS aggregata per ciascun partecipante.
+    """
+    aggregated_dataframes = {}
+    eeg_columns = ['alpha', 'beta', 'delta', 'gamma', 'theta']
+
+    for participant_id, dfs in normalized_segmented_dataframes.items():
+        df_game1_norm, df_game2_norm = dfs
+        log_file_path = os.path.join(log_dir, f"{participant_id}.txt")
+
+        # Estrai i timestamp dal log (che sono in millisecondi)
+        timestamps = extract_timestamps_from_log(log_file_path, participant_id)
+        if timestamps is None:
+            continue
+
+        # Convertiamo i timestamp dei log da millisecondi a secondi
+        timestamps = {key: value / 1000.0 for key, value in timestamps.items()}
+
+        # Funzione per calcolare la RMS per un intervallo specifico
+        def compute_rms(df, start, end, skip_start=1.0):
+            """ Calcola la RMS su un intervallo specifico, saltando i primi 'skip_start' secondi """
+            df_interval = df[(df["Timestamp"] >= start + skip_start) & (df["Timestamp"] <= end)]
+            if df_interval.empty:
+                return {band: [np.nan] * 8 for band in eeg_columns}  # Se vuoto, restituisci NaN
+
+            rms_values = {}
+            for band in eeg_columns:
+                stacked_values = np.vstack(df_interval[band])  # Stack per ottenere matrice [n_time x 8]
+                rms_values[band] = np.sqrt(np.mean(np.square(stacked_values), axis=0))  # RMS per ogni canale
+
+            return rms_values
+
+        # Definizione degli intervalli per il primo gioco (timestamp ora in secondi)
+        game1_intervals = [
+            (timestamps["Avvio del primo gioco"], timestamps["primo iGEQ mostrato, gioco messo in pausa"]),
+            (timestamps["primo iGEQ terminato, gioco ripreso"], timestamps["secondo iGEQ mostrato, gioco messo in pausa"]),
+            (timestamps["Avvio del primo gioco"], timestamps["Chiusura del primo gioco"],
+             [timestamps["primo iGEQ mostrato, gioco messo in pausa"], timestamps["primo iGEQ terminato, gioco ripreso"],
+              timestamps["secondo iGEQ mostrato, gioco messo in pausa"], timestamps["secondo iGEQ terminato, gioco ripreso"]])
+        ]
+
+        # Definizione degli intervalli per il secondo gioco (timestamp ora in secondi)
+        game2_intervals = [
+            (timestamps["Avvio secondo gioco"], timestamps["terzo iGEQ mostrato, gioco messo in pausa"]),
+            (timestamps["terzo iGEQ terminato, gioco ripreso"], timestamps["quarto iGEQ mostrato, gioco messo in pausa"]),
+            (timestamps["Avvio secondo gioco"], timestamps["Chiusura secondo gioco"],
+             [timestamps["terzo iGEQ mostrato, gioco messo in pausa"], timestamps["terzo iGEQ terminato, gioco ripreso"],
+              timestamps["quarto iGEQ mostrato, gioco messo in pausa"], timestamps["quarto iGEQ terminato, gioco ripreso"]])
+        ]
+
+        # Calcolo delle RMS per i tre intervalli di ogni gioco
+        game1_rms = []
+        for interval in game1_intervals:
+            if isinstance(interval, tuple) and len(interval) == 2:
+                game1_rms.append(compute_rms(df_game1_norm, *interval))
+            else:
+                start, end, exclude_intervals = interval
+                df_filtered = df_game1_norm[(df_game1_norm["Timestamp"] >= start + 1.0) & (df_game1_norm["Timestamp"] <= end)]
+                for excl_start, excl_end in zip(exclude_intervals[::2], exclude_intervals[1::2]):
+                    df_filtered = df_filtered[~((df_filtered["Timestamp"] >= excl_start) & (df_filtered["Timestamp"] <= excl_end))]
+                game1_rms.append(compute_rms(df_filtered, start, end))
+
+        game2_rms = []
+        for interval in game2_intervals:
+            if isinstance(interval, tuple) and len(interval) == 2:
+                game2_rms.append(compute_rms(df_game2_norm, *interval))
+            else:
+                start, end, exclude_intervals = interval
+                df_filtered = df_game2_norm[(df_game2_norm["Timestamp"] >= start + 1.0) & (df_game2_norm["Timestamp"] <= end)]
+                for excl_start, excl_end in zip(exclude_intervals[::2], exclude_intervals[1::2]):
+                    df_filtered = df_filtered[~((df_filtered["Timestamp"] >= excl_start) & (df_filtered["Timestamp"] <= excl_end))]
+                game2_rms.append(compute_rms(df_filtered, start, end))
+
+        # Creazione dei DataFrame
+        df_game1_rms = pd.DataFrame(game1_rms)
+        df_game1_rms.insert(0, "Interval", ["1st", "2nd", "Full w/o interruptions"])
+
+        df_game2_rms = pd.DataFrame(game2_rms)
+        df_game2_rms.insert(0, "Interval", ["1st", "2nd", "Full w/o interruptions"])
+
+        # Salviamo i DataFrame nel dizionario finale
+        aggregated_dataframes[participant_id] = {
+            "game1_rms": df_game1_rms,
+            "game2_rms": df_game2_rms
+        }
+
+    return aggregated_dataframes
+
+def compute_aggregated_ptp_amplitudes(normalized_segmented_dataframes, log_dir):
+    """
+    Calcola la Peak-to-Peak (PtP) Amplitude aggregata per ogni banda EEG e ogni canale,
+    restituendo tre righe per ogni gioco (sei righe in totale per partecipante).
+
+    Parametri:
+    normalized_segmented_dataframes (dict): Dizionario contenente i DataFrame normalizzati per ogni partecipante.
+                                            I timestamp nei DataFrame sono in **secondi**.
+    log_dir (str): Percorso della cartella dei log. I timestamp nei log sono in **millisecondi**.
+
+    Ritorna:
+    dict: Dizionario con i DataFrame di PtP aggregata per ciascun partecipante.
+    """
+    aggregated_dataframes = {}
+    eeg_columns = ['alpha', 'beta', 'delta', 'gamma', 'theta']
+
+    for participant_id, dfs in normalized_segmented_dataframes.items():
+        df_game1_norm, df_game2_norm = dfs
+        log_file_path = os.path.join(log_dir, f"{participant_id}.txt")
+
+        # Estrai i timestamp dal log (che sono in millisecondi)
+        timestamps = extract_timestamps_from_log(log_file_path, participant_id)
+        if timestamps is None:
+            continue
+
+        # Convertiamo i timestamp dei log da millisecondi a secondi
+        timestamps = {key: value / 1000.0 for key, value in timestamps.items()}
+
+        # Funzione per calcolare il Peak-to-Peak per un intervallo specifico
+        def compute_ptp(df, start, end, skip_start=1.0):
+            """ Calcola la Peak-to-Peak su un intervallo specifico, saltando i primi 'skip_start' secondi """
+            df_interval = df[(df["Timestamp"] >= start + skip_start) & (df["Timestamp"] <= end)]
+            if df_interval.empty:
+                return {band: [np.nan] * 8 for band in eeg_columns}  # Se vuoto, restituisci NaN
+
+            ptp_values = {}
+            for band in eeg_columns:
+                stacked_values = np.vstack(df_interval[band])  # Stack per ottenere matrice [n_time x 8]
+                ptp_values[band] = np.ptp(stacked_values, axis=0)  # Peak-to-Peak per ogni canale
+
+            return ptp_values
+
+        # Definizione degli intervalli per il primo gioco (timestamp ora in secondi)
+        game1_intervals = [
+            (timestamps["Avvio del primo gioco"], timestamps["primo iGEQ mostrato, gioco messo in pausa"]),
+            (timestamps["primo iGEQ terminato, gioco ripreso"], timestamps["secondo iGEQ mostrato, gioco messo in pausa"]),
+            (timestamps["Avvio del primo gioco"], timestamps["Chiusura del primo gioco"],
+             [timestamps["primo iGEQ mostrato, gioco messo in pausa"], timestamps["primo iGEQ terminato, gioco ripreso"],
+              timestamps["secondo iGEQ mostrato, gioco messo in pausa"], timestamps["secondo iGEQ terminato, gioco ripreso"]])
+        ]
+
+        # Definizione degli intervalli per il secondo gioco (timestamp ora in secondi)
+        game2_intervals = [
+            (timestamps["Avvio secondo gioco"], timestamps["terzo iGEQ mostrato, gioco messo in pausa"]),
+            (timestamps["terzo iGEQ terminato, gioco ripreso"], timestamps["quarto iGEQ mostrato, gioco messo in pausa"]),
+            (timestamps["Avvio secondo gioco"], timestamps["Chiusura secondo gioco"],
+             [timestamps["terzo iGEQ mostrato, gioco messo in pausa"], timestamps["terzo iGEQ terminato, gioco ripreso"],
+              timestamps["quarto iGEQ mostrato, gioco messo in pausa"], timestamps["quarto iGEQ terminato, gioco ripreso"]])
+        ]
+
+        # Calcolo delle Peak-to-Peak per i tre intervalli di ogni gioco
+        game1_ptp = []
+        for interval in game1_intervals:
+            if isinstance(interval, tuple) and len(interval) == 2:
+                game1_ptp.append(compute_ptp(df_game1_norm, *interval))
+            else:
+                start, end, exclude_intervals = interval
+                df_filtered = df_game1_norm[(df_game1_norm["Timestamp"] >= start + 1.0) & (df_game1_norm["Timestamp"] <= end)]
+                for excl_start, excl_end in zip(exclude_intervals[::2], exclude_intervals[1::2]):
+                    df_filtered = df_filtered[~((df_filtered["Timestamp"] >= excl_start) & (df_filtered["Timestamp"] <= excl_end))]
+                game1_ptp.append(compute_ptp(df_filtered, start, end))
+
+        game2_ptp = []
+        for interval in game2_intervals:
+            if isinstance(interval, tuple) and len(interval) == 2:
+                game2_ptp.append(compute_ptp(df_game2_norm, *interval))
+            else:
+                start, end, exclude_intervals = interval
+                df_filtered = df_game2_norm[(df_game2_norm["Timestamp"] >= start + 1.0) & (df_game2_norm["Timestamp"] <= end)]
+                for excl_start, excl_end in zip(exclude_intervals[::2], exclude_intervals[1::2]):
+                    df_filtered = df_filtered[~((df_filtered["Timestamp"] >= excl_start) & (df_filtered["Timestamp"] <= excl_end))]
+                game2_ptp.append(compute_ptp(df_filtered, start, end))
+
+        # Creazione dei DataFrame
+        df_game1_ptp = pd.DataFrame(game1_ptp)
+        df_game1_ptp.insert(0, "Interval", ["1st", "2nd", "Full w/o interruptions"])
+
+        df_game2_ptp = pd.DataFrame(game2_ptp)
+        df_game2_ptp.insert(0, "Interval", ["1st", "2nd", "Full w/o interruptions"])
+
+        # Salviamo i DataFrame nel dizionario finale
+        aggregated_dataframes[participant_id] = {
+            "game1_ptp": df_game1_ptp,
+            "game2_ptp": df_game2_ptp
+        }
+
+    return aggregated_dataframes
+
+def compute_aggregated_band_specific_amplitudes(normalized_segmented_dataframes, log_dir):
+    """
+    Calcola la Band-Specific Amplitude aggregata per ogni banda EEG e ogni canale,
+    restituendo tre righe per ogni gioco (sei righe in totale per partecipante).
+
+    Parametri:
+    normalized_segmented_dataframes (dict): Dizionario contenente i DataFrame normalizzati per ogni partecipante.
+                                            I timestamp nei DataFrame sono in **secondi**.
+    log_dir (str): Percorso della cartella dei log. I timestamp nei log sono in **millisecondi**.
+
+    Ritorna:
+    dict: Dizionario con i DataFrame di Band-Specific Amplitude aggregata per ciascun partecipante.
+    """
+    aggregated_dataframes = {}
+    eeg_columns = ['alpha', 'beta', 'delta', 'gamma', 'theta']
+
+    for participant_id, dfs in normalized_segmented_dataframes.items():
+        df_game1_norm, df_game2_norm = dfs
+        log_file_path = os.path.join(log_dir, f"{participant_id}.txt")
+
+        # Estrai i timestamp dal log (che sono in millisecondi)
+        timestamps = extract_timestamps_from_log(log_file_path, participant_id)
+        if timestamps is None:
+            continue
+
+        # Convertiamo i timestamp dei log da millisecondi a secondi
+        timestamps = {key: value / 1000.0 for key, value in timestamps.items()}
+
+        # Funzione per calcolare la Band-Specific Amplitude per un intervallo specifico
+        def compute_band_specific(df, start, end, skip_start=1.0):
+            """ Calcola la media delle ampiezze di banda su un intervallo specifico, saltando i primi 'skip_start' secondi """
+            df_interval = df[(df["Timestamp"] >= start + skip_start) & (df["Timestamp"] <= end)]
+            if df_interval.empty:
+                return {band: [np.nan] * 8 for band in eeg_columns}  # Se vuoto, restituisci NaN
+
+            band_values = {}
+            for band in eeg_columns:
+                stacked_values = np.vstack(df_interval[band])  # Stack per ottenere matrice [n_time x 8]
+                band_values[band] = np.mean(stacked_values, axis=0)  # Media per ogni canale
+
+            return band_values
+
+        # Definizione degli intervalli per il primo gioco (timestamp ora in secondi)
+        game1_intervals = [
+            (timestamps["Avvio del primo gioco"], timestamps["primo iGEQ mostrato, gioco messo in pausa"]),
+            (timestamps["primo iGEQ terminato, gioco ripreso"], timestamps["secondo iGEQ mostrato, gioco messo in pausa"]),
+            (timestamps["Avvio del primo gioco"], timestamps["Chiusura del primo gioco"],
+             [timestamps["primo iGEQ mostrato, gioco messo in pausa"], timestamps["primo iGEQ terminato, gioco ripreso"],
+              timestamps["secondo iGEQ mostrato, gioco messo in pausa"], timestamps["secondo iGEQ terminato, gioco ripreso"]])
+        ]
+
+        # Definizione degli intervalli per il secondo gioco (timestamp ora in secondi)
+        game2_intervals = [
+            (timestamps["Avvio secondo gioco"], timestamps["terzo iGEQ mostrato, gioco messo in pausa"]),
+            (timestamps["terzo iGEQ terminato, gioco ripreso"], timestamps["quarto iGEQ mostrato, gioco messo in pausa"]),
+            (timestamps["Avvio secondo gioco"], timestamps["Chiusura secondo gioco"],
+             [timestamps["terzo iGEQ mostrato, gioco messo in pausa"], timestamps["terzo iGEQ terminato, gioco ripreso"],
+              timestamps["quarto iGEQ mostrato, gioco messo in pausa"], timestamps["quarto iGEQ terminato, gioco ripreso"]])
+        ]
+
+        # Calcolo delle Band-Specific Amplitudes per i tre intervalli di ogni gioco
+        game1_band = []
+        for interval in game1_intervals:
+            if isinstance(interval, tuple) and len(interval) == 2:
+                game1_band.append(compute_band_specific(df_game1_norm, *interval))
+            else:
+                start, end, exclude_intervals = interval
+                df_filtered = df_game1_norm[(df_game1_norm["Timestamp"] >= start + 1.0) & (df_game1_norm["Timestamp"] <= end)]
+                for excl_start, excl_end in zip(exclude_intervals[::2], exclude_intervals[1::2]):
+                    df_filtered = df_filtered[~((df_filtered["Timestamp"] >= excl_start) & (df_filtered["Timestamp"] <= excl_end))]
+                game1_band.append(compute_band_specific(df_filtered, start, end))
+
+        game2_band = []
+        for interval in game2_intervals:
+            if isinstance(interval, tuple) and len(interval) == 2:
+                game2_band.append(compute_band_specific(df_game2_norm, *interval))
+            else:
+                start, end, exclude_intervals = interval
+                df_filtered = df_game2_norm[(df_game2_norm["Timestamp"] >= start + 1.0) & (df_game2_norm["Timestamp"] <= end)]
+                for excl_start, excl_end in zip(exclude_intervals[::2], exclude_intervals[1::2]):
+                    df_filtered = df_filtered[~((df_filtered["Timestamp"] >= excl_start) & (df_filtered["Timestamp"] <= excl_end))]
+                game2_band.append(compute_band_specific(df_filtered, start, end))
+
+        # Creazione dei DataFrame
+        df_game1_band = pd.DataFrame(game1_band)
+        df_game1_band.insert(0, "Interval", ["1st", "2nd", "Full w/o interruptions"])
+
+        df_game2_band = pd.DataFrame(game2_band)
+        df_game2_band.insert(0, "Interval", ["1st", "2nd", "Full w/o interruptions"])
+
+        # Salviamo i DataFrame nel dizionario finale
+        aggregated_dataframes[participant_id] = {
+            "game1_band": df_game1_band,
+            "game2_band": df_game2_band
+        }
+
+    return aggregated_dataframes
