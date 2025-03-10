@@ -2,12 +2,13 @@ import pandas as pd
 import os
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.stats import spearmanr, kendalltau, combine_pvalues
+from scipy.stats import spearmanr, combine_pvalues
 
 def spearman_corr_with_p(aggregated_amplitudes, df_noto_dict, df_ignoto_dict, method):
     """
     Calcola la correlazione di Spearman tra le ampiezze EEG aggregate e le risposte ai questionari.
-    
+    Il calcolo della correlazione viene effettuato separatamente per ogni banda, sensore e domanda.
+
     Parametri:
     - aggregated_amplitudes (dict): Dizionario con i DataFrame delle ampiezze EEG per ogni partecipante.
     - df_noto_dict (dict): Dizionario con i dati dei questionari per il gioco noto.
@@ -15,234 +16,147 @@ def spearman_corr_with_p(aggregated_amplitudes, df_noto_dict, df_ignoto_dict, me
     - method (str): Metodo di calcolo dell'ampiezza utilizzato.
 
     Ritorna:
-    - DataFrame con i risultati della correlazione (Spearman e p-value).
+    - DataFrame con i risultati della correlazione per ogni combinazione di banda, sensore e domanda.
     """    
-    results = []
 
-    interval_map = {
-        0: "df_selfreport_1",
-        1: "df_selfreport_2",
-        2: "df_selfreport_final"
-    }
-
-    # Mappatura degli intervalli ai tipi di questionario
-    interval_to_questionnaire = {
-        0: "iGEQ",  # Intervallo 0 → iGEQ
-        1: "iGEQ",  # Intervallo 1 → iGEQ
-        2: "GEQ"    # Intervallo 2 → GEQ
-    }
-
-    bands = ['alpha', 'beta', 'delta', 'gamma', 'theta']
-    sensors = ['CP3', 'C3', 'F5', 'PO3', 'PO4', 'F6', 'C4', 'CP4']
-
-    # Domande da considerare per ciascun intervallo
-    domande_per_intervallo = {
-        0: [5, 10],
-        1: [5, 10],
-        2: [5, 13, 25, 28, 31]
-    }
-
-    # Strutture dati per raccogliere le correlazioni
-    eeg_data = {"Noto": {}, "Ignoto": {}}
-    questionario_data = {"Noto": {}, "Ignoto": {}}
-
-    # Log per conteggio partecipanti
-    n_participants_processed = 0
-    n_participants_skipped = 0
+    results = []  # Lista per salvare i risultati della correlazione
     
+    # Mappa degli intervalli temporali ai rispettivi DataFrame dei questionari
+    interval_map = {
+        0: "df_selfreport_1",  # Primo intervallo (inizio gioco - 1 interruzione)
+        1: "df_selfreport_2",  # Secondo intervallo (tra 1 e 2 interruzione)
+        2: "df_selfreport_final"  # Terzo intervallo (dopo la 2 interruzione - fine gioco)
+    }
+    
+    # Associa ogni intervallo al tipo di questionario somministrato
+    interval_to_questionnaire = {
+        0: "iGEQ",  
+        1: "iGEQ",  
+        2: "GEQ"    
+    }
+
+    # Bande EEG considerate nell'analisi
+    bands = ['alpha', 'beta', 'delta', 'gamma', 'theta']
+    
+    # Sensori EEG utilizzati (8 elettrodi)
+    sensors = ['CP3', 'C3', 'F5', 'PO3', 'PO4', 'F6', 'C4', 'CP4']
+    
+    # Domande dei questionari per ciascun intervallo temporale
+    domande_per_intervallo = {
+        0: [5, 10],  # Domande per il primo intervallo
+        1: [5, 10],  # Domande per il secondo intervallo
+        2: [5, 13, 25, 28, 31]  # Domande per il terzo intervallo
+    }
+    
+    all_data = []  # Lista per raccogliere i dati da correlare
+    
+    # Itera su ogni partecipante nei dati EEG aggregati
     for participant, games in aggregated_amplitudes.items():
-        # Determina quale dizionario usare in base al prefisso del partecipante
+        # Determina se il partecipante appartiene al gruppo "A" o "B"
         if f"A_{participant}" in df_noto_dict:
-            noto_dict = df_noto_dict
-            ignoto_dict = df_ignoto_dict
-            participant_key_noto = f"A_{participant}"
-            participant_key_ignoto = f"A_{participant}"
-            game_noto = f"game1_{method}"
-            game_ignoto = f"game2_{method}"
+            noto_dict = df_noto_dict  # Il dizionario "noto" è quello associato ad "A"
+            ignoto_dict = df_ignoto_dict  # Il dizionario "ignoto" è quello associato ad "A"
+            participant_key = f"A_{participant}"
+            game_noto = f"game1_{method}"  # Il primo gioco è quello noto
+            game_ignoto = f"game2_{method}"  # Il secondo gioco è quello ignoto
         elif f"B_{participant}" in df_noto_dict:
-            noto_dict = df_ignoto_dict
-            ignoto_dict = df_noto_dict
-            participant_key_noto = f"B_{participant}"
-            participant_key_ignoto = f"B_{participant}"
+            noto_dict = df_ignoto_dict  # In questo caso, il gioco noto è il secondo
+            ignoto_dict = df_noto_dict  # Il gioco ignoto è il primo
+            participant_key = f"B_{participant}"
             game_noto = f"game2_{method}"
             game_ignoto = f"game1_{method}"
         else:
-            print(f"Partecipante {participant} non trovato nei dizionari dei questionari.")
-            n_participants_skipped += 1
-            continue
+            continue  # Se il partecipante non è nei dizionari, viene saltato
 
-        # Recupera i dataframes per i giochi noto e ignoto
+        # Recupera i DataFrame EEG e questionari corrispondenti
         df_noto = games.get(game_noto)
         df_ignoto = games.get(game_ignoto)
+        df_noto_q = noto_dict.get(participant_key)
+        df_ignoto_q = ignoto_dict.get(participant_key)
 
-        # Recupera i dati dei questionari
-        df_noto_q = noto_dict.get(participant_key_noto)
-        df_ignoto_q = ignoto_dict.get(participant_key_ignoto)
-
-        if df_noto is None or df_ignoto is None:
-            print(f"Partecipante {participant}: dati EEG mancanti per {method}.")
-            n_participants_skipped += 1
+        # Se mancano dati EEG o questionari per un partecipante, si salta l'iterazione
+        if df_noto is None or df_ignoto is None or df_noto_q is None or df_ignoto_q is None:
             continue
 
-        if df_noto_q is None or df_ignoto_q is None:
-            print(f"Partecipante {participant}: dati questionario mancanti.")
-            n_participants_skipped += 1
-            continue
-
-        n_participants_processed += 1
-
-        # Processa ogni intervallo temporale
+        # Itera su ciascun intervallo temporale (0, 1, 2)
         for interval_idx in range(3):
-            questionnaire_type = interval_to_questionnaire[interval_idx]
-            interval_name = interval_map[interval_idx]
+            interval_name = interval_map[interval_idx]  # Nome dell'intervallo
+            questionnaire_type = interval_to_questionnaire[interval_idx]  # Tipo di questionario associato
             
-            # Verifica che i dataframe dei questionari esistano e non siano vuoti
+            # Controlla se i dati del questionario sono disponibili per questo intervallo
             if interval_name not in df_noto_q or interval_name not in df_ignoto_q:
-                print(f"Intervallo {interval_name} mancante per partecipante {participant}")
-                continue
-                
-            df_noto_q_interval = df_noto_q[interval_name]
-            df_ignoto_q_interval = df_ignoto_q[interval_name]
-            
-            if df_noto_q_interval.empty or df_ignoto_q_interval.empty:
-                print(f"Dati vuoti per intervallo {interval_name}, partecipante {participant}")
                 continue
 
-            # Processa ogni banda EEG
+            df_noto_q_interval = df_noto_q[interval_name]  # Estrai il DataFrame corrispondente al gioco noto
+            df_ignoto_q_interval = df_ignoto_q[interval_name]  # Estrai il DataFrame corrispondente al gioco ignoto
+            
+            # Itera su ciascuna banda EEG
             for banda in bands:
                 try:
-                    # Estrai i valori delle ampiezze EEG per l'intervallo corrente
+                    # Estrai i valori EEG per l'intervallo corrente
                     noto_eeg_values = df_noto[banda].iloc[interval_idx]
                     ignoto_eeg_values = df_ignoto[banda].iloc[interval_idx]
-                except IndexError:
-                    print(f"Errore indice per banda {banda}, partecipante {participant}, intervallo {interval_idx}")
-                    continue
-                except Exception as e:
-                    print(f"Errore durante l'accesso ai dati EEG: {e}")
-                    continue
+                except:
+                    continue  # Salta se l'accesso ai dati EEG fallisce
 
-                # Processa ogni sensore
+                # Itera su ciascun sensore EEG
                 for sensor_idx, sensore in enumerate(sensors):
-                    # Per ogni domanda nell'intervallo corrente
+                    # Itera sulle domande del questionario per l'intervallo corrente
                     for domanda in domande_per_intervallo[interval_idx]:
-                        # Crea una chiave unica per la domanda con il tipo di questionario
-                        domanda_label = f"{questionnaire_type}_Q{domanda}"
-                        
-                        # Estrai il valore EEG per questo sensore
                         try:
+                            # Estrai il valore EEG per il sensore corrente
                             noto_sensor_value = noto_eeg_values[sensor_idx]
                             ignoto_sensor_value = ignoto_eeg_values[sensor_idx]
-                        except IndexError:
-                            print(f"Errore indice sensore {sensor_idx} per banda {banda}, partecipante {participant}")
-                            continue
+                        except:
+                            continue  # Salta se non riesce ad accedere ai dati EEG per il sensore
+
+                        # Estrai i punteggi del questionario per la domanda corrente
+                        noto_score = df_noto_q_interval.loc[
+                            (df_noto_q_interval["Domanda"].astype(str) == str(domanda)), 
+                            "Punteggio"
+                        ].values
                         
-                        # Filtra i punteggi del questionario per la domanda corrente
-                        try:
-                            noto_score = df_noto_q_interval.loc[
-                                (df_noto_q_interval["Domanda"].astype(str) == str(domanda)) & 
-                                (df_noto_q_interval["Tipo_Questionario"] == questionnaire_type), 
-                                "Punteggio"
-                            ].values
-                            
-                            ignoto_score = df_ignoto_q_interval.loc[
-                                (df_ignoto_q_interval["Domanda"].astype(str) == str(domanda)) & 
-                                (df_ignoto_q_interval["Tipo_Questionario"] == questionnaire_type), 
-                                "Punteggio"
-                            ].values
-                        except Exception as e:
-                            print(f"Errore filtro questionari: {e}")
-                            continue
-                            
-                        # Verifica che ci siano punteggi validi
+                        ignoto_score = df_ignoto_q_interval.loc[
+                            (df_ignoto_q_interval["Domanda"].astype(str) == str(domanda)), 
+                            "Punteggio"
+                        ].values
+
+                        # Salta se non sono presenti punteggi validi
                         if len(noto_score) == 0 or len(ignoto_score) == 0:
                             continue
-                            
-                        # Prendi solo il primo punteggio (dovrebbe essercene solo uno per domanda)
-                        if len(noto_score) > 1:
-                            print(f"ATTENZIONE: Più di un punteggio per domanda {domanda} in {questionnaire_type} per {participant} (gioco noto)")
-                            noto_score = noto_score[0]
-                        else:
-                            noto_score = noto_score[0]
-                            
-                        if len(ignoto_score) > 1:
-                            print(f"ATTENZIONE: Più di un punteggio per domanda {domanda} in {questionnaire_type} per {participant} (gioco ignoto)")
-                            ignoto_score = ignoto_score[0]
-                        else:
-                            ignoto_score = ignoto_score[0]
-                        
-                        # Crea una chiave univoca per questo specifico contesto
-                        key_noto = (banda, sensore, interval_name, domanda_label, "Noto", participant)
-                        key_ignoto = (banda, sensore, interval_name, domanda_label, "Ignoto", participant)
-                        
-                        # Aggiungi i dati ai dizionari per la correlazione
-                        if key_noto not in eeg_data["Noto"]:
-                            eeg_data["Noto"][key_noto] = noto_sensor_value
-                            questionario_data["Noto"][key_noto] = noto_score
-                            
-                        if key_ignoto not in eeg_data["Ignoto"]:
-                            eeg_data["Ignoto"][key_ignoto] = ignoto_sensor_value
-                            questionario_data["Ignoto"][key_ignoto] = ignoto_score
 
-    print(f"Partecipanti elaborati: {n_participants_processed}")
-    print(f"Partecipanti saltati: {n_participants_skipped}")
+                        # Aggiunge i dati alla lista per l'analisi della correlazione
+                        all_data.append([interval_name, banda, sensore, f"{questionnaire_type}_Q{domanda}", noto_sensor_value, noto_score[0]])
+                        all_data.append([interval_name, banda, sensore, f"{questionnaire_type}_Q{domanda}", ignoto_sensor_value, ignoto_score[0]])
     
-    # Raggruppa i dati per calcolare le correlazioni
-    correlation_data = {}
-    
-    for gioco in ["Noto", "Ignoto"]:
-        for key in eeg_data[gioco]:
-            banda, sensore, intervallo, domanda_label, _, _ = key
-            group_key = (gioco, intervallo, banda, sensore, domanda_label)
-            
-            if group_key not in correlation_data:
-                correlation_data[group_key] = {
-                    "eeg_values": [],
-                    "questionnaire_scores": []
-                }
-                
-            correlation_data[group_key]["eeg_values"].append(eeg_data[gioco][key])
-            correlation_data[group_key]["questionnaire_scores"].append(questionario_data[gioco][key])
-    
-    # Calcola le correlazioni di Spearman
-    for group_key, data in correlation_data.items():
-        gioco, intervallo, banda, sensore, domanda = group_key
+    # Se sono stati raccolti dati, si procede con la correlazione
+    if all_data:
+        df_all_data = pd.DataFrame(all_data, columns=["Intervallo", "Banda", "Sensore", "Domanda", "EEG_Valore", "Punteggio"])
+        df_all_data.to_csv("df_aggregated_ptp.csv", index=False)
         
-        eeg_values = data["eeg_values"]
-        punteggi = data["questionnaire_scores"]
-        
-        # Verifica che ci siano abbastanza dati per calcolare la correlazione
-        if len(eeg_values) > 1 and len(punteggi) > 1:  # Serve più di un dato per la correlazione
-            try:
-                # Rimuovi eventuali NaN
-                valid_indices = ~(np.isnan(eeg_values) | np.isnan(punteggi))
-                valid_eeg = [eeg_values[i] for i in range(len(eeg_values)) if valid_indices[i]]
-                valid_scores = [punteggi[i] for i in range(len(punteggi)) if valid_indices[i]]
-                
-                if len(valid_eeg) > 1:  # Ricontrolla dopo aver rimosso i NaN
-                    spearman_corr, p_value = spearmanr(valid_eeg, valid_scores)
-                    results.append([gioco, intervallo, banda, sensore, domanda, spearman_corr, p_value, len(valid_eeg)])
-            except Exception as e:
-                print(f"Errore nel calcolo della correlazione: {e} per {group_key}")
+        # Calcola la correlazione di Spearman per ogni combinazione di banda, sensore e domanda
+        for (banda, sensore, domanda), group in df_all_data.groupby(["Banda", "Sensore", "Domanda"]):
+            spearman_corr, p_value = spearmanr(group["EEG_Valore"], group["Punteggio"])
+            results.append(["Aggregato", banda, sensore, domanda, spearman_corr, p_value, len(group)])
     
-    # Crea il DataFrame finale dei risultati
-    if results:
-        results_df = pd.DataFrame(
-            results, 
-            columns=["Gioco", "Intervallo", "Banda", "Sensore", "Domanda", "Spearman Corr", "p-value", "Num_Samples"]
-        )
-        
-        # Ordina per p-value per evidenziare le correlazioni significative
-        results_df = results_df.sort_values(by=["p-value", "Spearman Corr"], ascending=[True, False])
-    else:
-        results_df = pd.DataFrame(
-            columns=["Gioco", "Intervallo", "Banda", "Sensore", "Domanda", "Spearman Corr", "p-value", "Num_Samples"]
-        )
-        print("ATTENZIONE: Nessun risultato di correlazione calcolato!")
-
+    # Creazione del DataFrame con i risultati della correlazione
+    results_df = pd.DataFrame(results, columns=["Gioco", "Banda", "Sensore", "Domanda", "Spearman Corr", "p-value", "Num_Samples"])
+    
     return results_df
 
-
-def export_correlation_and_pvalue_tables(correlation_df, output_noto, output_ignoto):
+def generate_correlation_table(correlation_df, output_corr_file, output_pval_file):
+    """
+    Genera una tabella aggregata delle correlazioni di Spearman tra i gruppi di sensori EEG e le risposte ai questionari,
+    ed esporta i risultati sia per le correlazioni che per i p-values.
+    
+    Parametri:
+    - correlation_df (DataFrame): DataFrame contenente i dati di correlazione unificati.
+    - output_corr_file (str): Nome del file CSV per le correlazioni.
+    - output_pval_file (str): Nome del file CSV per i p-values.
+    
+    Ritorna:
+    - DataFrame con le correlazioni aggregate per ogni domanda e regione cerebrale.
+    """
     # Definizione delle aree cerebrali
     sensor_groups = {
         "Frontale Left": ["F5"],
@@ -256,80 +170,67 @@ def export_correlation_and_pvalue_tables(correlation_df, output_noto, output_ign
     # Bande di frequenza
     bands = ['alpha', 'beta', 'delta', 'gamma', 'theta']
     
-    # Generiamo i nomi dei file per le correlazioni e i p-values
-    output_noto_pval = output_noto.replace(".csv", "_pvalues.csv")
-    output_ignoto_pval = output_ignoto.replace(".csv", "_pvalues.csv")
+    # Domande da includere nella tabella
+    domande_selezionate = ["iGEQ_Q5", "iGEQ_Q10", "GEQ_Q5", "GEQ_Q13", "GEQ_Q25", "GEQ_Q28", "GEQ_Q31"]
     
-    # Creazione delle tabelle per gioco noto e ignoto
-    for gioco, output_corr_file, output_pval_file in zip(
-        ["Noto", "Ignoto"], 
-        [output_noto, output_ignoto], 
-        [output_noto_pval, output_ignoto_pval]
-    ):
-        table_corr_data = []  # Per le correlazioni
-        table_pval_data = []  # Per i p-values
+    table_corr_data = []  # Lista per salvare i dati della tabella delle correlazioni
+    table_pval_data = []  # Lista per salvare i dati della tabella dei p-values
+    
+    for domanda in domande_selezionate:
+        row_corr = {"Domanda": domanda}
+        row_pval = {"Domanda": domanda}
         
-        # Seleziona solo i dati del gioco attuale
-        df_filtered = correlation_df[correlation_df["Gioco"] == gioco]
+        for band in bands:
+            for region, sensors in sensor_groups.items():
+                # Filtra i dati per banda, sensore e domanda
+                region_data = correlation_df[
+                    (correlation_df["Banda"] == band) & 
+                    (correlation_df["Sensore"].isin(sensors)) & 
+                    (correlation_df["Domanda"] == domanda)
+                ]
+                
+                if region_data.empty:
+                    row_corr[f"{band} {region}"] = np.nan
+                    row_pval[f"{band} {region}"] = np.nan
+                    continue
+                
+                # Calcola la media delle correlazioni per la regione
+                region_corr = region_data["Spearman Corr"].mean()
+                row_corr[f"{band} {region}"] = round(region_corr, 3) if not np.isnan(region_corr) else np.nan
+                
+                # Calcola la media dei p-values per la regione
+                region_pval = region_data["p-value"].mean()
+                row_pval[f"{band} {region}"] = round(region_pval, 3) if not np.isnan(region_pval) else np.nan
         
-        for domanda in sorted(df_filtered["Domanda"].unique()):
-            row_corr = {"Domanda": domanda}
-            row_pval = {"Domanda": domanda}
-            p_values_storage = {}  # Per raccogliere i p-values per Fisher
-
-            for band in bands:
-                for region, sensors in sensor_groups.items():
-                    # Seleziona solo le correlazioni per la regione e banda
-                    region_data = df_filtered[
-                        (df_filtered["Banda"] == band) & 
-                        (df_filtered["Sensore"].isin(sensors)) & 
-                        (df_filtered["Domanda"] == domanda)
-                    ]
-
-                    # Calcola la media delle correlazioni per la regione
-                    region_corr = region_data["Spearman Corr"].mean()
-                    row_corr[f"{band} {region}"] = round(region_corr, 3) if not np.isnan(region_corr) else np.nan
-
-                    # Raccoglie i p-values per il metodo di Fisher
-                    p_values = region_data["p-value"].dropna().values
-                    if len(p_values) > 0:
-                        p_values_storage[f"{band} {region}"] = p_values
-
-            # Calcola i p-values combinati per ogni banda e regione
-            for col, p_vals in p_values_storage.items():
-                if len(p_vals) > 1:
-                    _, fisher_p = combine_pvalues(p_vals, method='fisher')
-                    row_pval[col] = round(fisher_p, 3)  # Approssima il p-value combinato
-                else:
-                    row_pval[col] = round(p_vals[0], 3) if len(p_vals) == 1 else np.nan  # Se c'è un solo valore, lo usiamo
-
-            table_corr_data.append(row_corr)
-            table_pval_data.append(row_pval)
-
-        # Creazione DataFrame per correlazioni
-        table_corr_df = pd.DataFrame(table_corr_data)
-
-        # Creazione DataFrame per p-values
-        table_pval_df = pd.DataFrame(table_pval_data)
-
-        # **Aggiunta della riga "Flow"** come media delle domande
-        flow_corr_row = {"Domanda": "Flow"}
-        flow_pval_row = {"Domanda": "Flow"}
-        
-        for col in table_corr_df.columns[1:]:  # Escludiamo la colonna "Domanda"
-            flow_corr_row[col] = round(table_corr_df[col].mean(), 3) if not np.isnan(table_corr_df[col].mean()) else np.nan
-            flow_pval_row[col] = round(table_pval_df[col].mean(), 3) if not np.isnan(table_pval_df[col].mean()) else np.nan
-
-        # **Aggiungiamo la riga "Flow" alla tabella**
-        table_corr_df = pd.concat([table_corr_df, pd.DataFrame([flow_corr_row])], ignore_index=True)
-        table_pval_df = pd.concat([table_pval_df, pd.DataFrame([flow_pval_row])], ignore_index=True)
-        
-        # Esporta in CSV
-        table_corr_df.to_csv(output_corr_file, index=False)
-        table_pval_df.to_csv(output_pval_file, index=False)
-
-        print(f"Esportata tabella delle correlazioni per {gioco}: {output_corr_file}")
-        print(f"Esportata tabella dei p-values per {gioco}: {output_pval_file}")
+        table_corr_data.append(row_corr)
+        table_pval_data.append(row_pval)
+    
+    # Creazione DataFrame per correlazioni e p-values
+    table_corr_df = pd.DataFrame(table_corr_data)
+    table_pval_df = pd.DataFrame(table_pval_data)
+    
+    if table_corr_df.empty:
+        print("ERRORE: Nessun dato valido trovato per la tabella di correlazione.")
+        return None
+    
+    # **Aggiunta della riga "Flow"** come media delle domande per entrambi i file
+    flow_corr_row = {"Domanda": "Flow"}
+    flow_pval_row = {"Domanda": "Flow"}
+    for col in table_corr_df.columns[1:]:  # Escludiamo la colonna "Domanda"
+        flow_corr_row[col] = round(table_corr_df[col].mean(), 3) if not np.isnan(table_corr_df[col].mean()) else np.nan
+        flow_pval_row[col] = round(table_pval_df[col].mean(), 3) if not np.isnan(table_pval_df[col].mean()) else np.nan
+    
+    # **Aggiungiamo la riga "Flow" alla tabella**
+    table_corr_df = pd.concat([table_corr_df, pd.DataFrame([flow_corr_row])], ignore_index=True)
+    table_pval_df = pd.concat([table_pval_df, pd.DataFrame([flow_pval_row])], ignore_index=True)
+    
+    # Esporta in CSV
+    table_corr_df.to_csv(output_corr_file, index=False)
+    table_pval_df.to_csv(output_pval_file, index=False)
+    print(f"Esportata tabella delle correlazioni: {output_corr_file}")
+    print(f"Esportata tabella dei p-values: {output_pval_file}")
+    
+    return table_corr_df
 
 
 def filter_significant_correlations(corr_file, pval_file, output_file, threshold=0.10):

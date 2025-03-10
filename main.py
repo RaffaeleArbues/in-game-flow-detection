@@ -33,7 +33,10 @@ def main():
 
 
     # Calcolo delle correlazioni per RMS
-    #correlation_rms = corr.kendall_corr_with_p(aggregated_rms, df_noto_dict, df_ignoto_dict, "rms")
+    correlation_ptp = corr.spearman_corr_with_p(aggregated_ptp, df_noto_dict, df_ignoto_dict, "ptp")
+    #correlation_ptp.to_csv("df_spearman_ptp.csv", index=False)
+
+    #print(correlation_rms)
 
     # Calcolo delle correlazioni per Peak-to-Peak
     #correlation_bs = corr.spearman_corr_with_p(aggregated_bs, df_noto_dict, df_ignoto_dict, "ptp")
@@ -41,14 +44,14 @@ def main():
     # Calcolo delle correlazioni per Band-Specific
     #correlation_band = corr.spearman_corr_with_p(aggregated_bs, df_noto_dict, df_ignoto_dict, "band")
 
-    #corr.export_correlation_and_pvalue_tables(correlation_bs, "correlation_table_noto.csv", "correlation_table_ignoto.csv")
+    #corr.generate_correlation_table(correlation_ptp, "correlation_table.csv", "pvalue_table.csv")
 
     '''
-    correlation_file = "C://Users//raffa//OneDrive//Desktop//Tesi//PLOTS//CORR_EEG//Intervalli cambiati//band//correlation_table_ignoto.csv"
-    pvalue_file = "C://Users//raffa//OneDrive//Desktop//Tesi//PLOTS//CORR_EEG//Intervalli cambiati//band//correlation_table_ignoto_pvalues.csv"
+    correlation_file = "C://Users//raffa//OneDrive//Desktop//Tesi//PLOTS//CORR_EEG//Intervalli cambiati//rms//correlation_table_ignoto.csv"
+    pvalue_file = "C://Users//raffa//OneDrive//Desktop//Tesi//PLOTS//CORR_EEG//Intervalli cambiati//rms//correlation_table_ignoto_pvalues.csv"
     corr.filter_significant_correlations(correlation_file, pvalue_file, "filtered_correlation.csv")
 
-
+    
     # Salvare ogni DataFrame normalizzato come CSV
     for participant_id, dfs in normalized_segmented_dataframes.items():
         df_game1_norm, df_game2_norm = dfs
