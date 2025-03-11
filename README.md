@@ -1,4 +1,4 @@
-## Metodo di Analisi
+## Metodo di Analisi (EEG)
 Per ogni partecipante, la funzione **`spearman_corr_with_p`** esegue i seguenti passi:
 1. **Segmentazione dei dati EEG** in tre intervalli temporali corrispondenti alle somministrazioni dei questionari.
 2. **Associazione dei dati EEG con i questionari** relativi allo stesso partecipante.
@@ -56,10 +56,10 @@ for participant, games in aggregated_amplitudes.items():
 #### **Recupera i DataFrame EEG e questionari corrispondenti**
 
 ```python
-df_noto = games.get(game_noto)
-        df_ignoto = games.get(game_ignoto)
-        df_noto_q = noto_dict.get(participant_key)
-        df_ignoto_q = ignoto_dict.get(participant_key)
+    df_noto = games.get(game_noto)
+    df_ignoto = games.get(game_ignoto)
+    df_noto_q = noto_dict.get(participant_key)
+    df_ignoto_q = ignoto_dict.get(participant_key)
 ```
 #### **Estrazione dei dati EEG per ogni intervallo**
 
@@ -90,7 +90,7 @@ all_data.append([interval_name, banda, sensore, f"{questionnaire_type}_Q{domanda
 ```
 
 #### **Calcolo della correlazione di Spearman**
-Una volta ottenuti i dati, si calcola la correlazione e il p-value tra ampiezza EEG e risposte ai questionari:
+Una volta ottenuto il dataframe `df_all_data`, raggruppo le colonne `["Banda", "Sensore", "Domanda"]` e calcolo la correlazione e il p-value tra ampiezza EEG e risposte ai questionari:
 
 ```python
 for (banda, sensore, domanda), group in df_all_data.groupby(["Banda", "Sensore", "Domanda"]):
