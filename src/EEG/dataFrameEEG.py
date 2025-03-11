@@ -152,18 +152,6 @@ def split_dataframes(dataframes, log_dir):
         df_game1 = df[(df["Timestamp"] >= ts_game1_start - tolerance) & (df["Timestamp"] <= ts_game1_end + tolerance)]
         df_game2 = df[(df["Timestamp"] >= ts_video2_end - tolerance) & (df["Timestamp"] <= ts_game2_end + tolerance)]
 
-        '''
-        # Esclusione degli intervalli di tempo in cui il partecipante sta compilando l'igeq
-        df_game1 = df_game1[~df_game1["Timestamp"].between(ts_first_igeq_start, ts_first_igeq_end)]
-        df_game1 = df_game1[~df_game1["Timestamp"].between(ts_second_igeq_start, ts_second_igeq_end)]
-        df_game1 = df_game1[~df_game1["Timestamp"].between(ts_third_igeq_start, ts_third_igeq_end)]
-        df_game1 = df_game1[~df_game1["Timestamp"].between(ts_fourth_igeq_start, ts_fourth_igeq_end)]
-
-        df_game2 = df_game2[~df_game2["Timestamp"].between(ts_first_igeq_start, ts_first_igeq_end)]
-        df_game2 = df_game2[~df_game2["Timestamp"].between(ts_second_igeq_start, ts_second_igeq_end)]
-        df_game2 = df_game2[~df_game2["Timestamp"].between(ts_third_igeq_start, ts_third_igeq_end)]
-        df_game2 = df_game2[~df_game2["Timestamp"].between(ts_fourth_igeq_start, ts_fourth_igeq_end)]
-        '''
         # Stampa il numero di righe nei segmenti per verificare
         #print(f"{participant_id}: video1={len(df_video1)}, game1={len(df_game1)}, game2={len(df_game2)}")
 
@@ -341,16 +329,16 @@ def normalize_eeg(segmented_dataframes):
 
 def compute_aggregated_rms_amplitudes(normalized_segmented_dataframes, log_dir):
     """
-    Calcola la RMS Amplitude aggregata per ogni banda EEG e ogni canale,
+    Calcola la Root Mean Square (RMS) Amplitude aggregata per ogni banda EEG e ogni canale,
     restituendo tre righe per ogni gioco (sei righe in totale per partecipante).
 
     Parametri:
-    - normalized_segmented_dataframes (dict): Dizionario contenente i DataFrame normalizzati per ogni partecipante.
-                                              I timestamp nei DataFrame sono in **secondi**.
-    - log_dir (str): Percorso della cartella dei log. I timestamp nei log sono in **millisecondi**.
+    normalized_segmented_dataframes (dict): Dizionario contenente i DataFrame normalizzati per ogni partecipante.
+                                            I timestamp nei DataFrame sono in **secondi**.
+    log_dir (str): Percorso della cartella dei log. I timestamp nei log sono in **millisecondi**.
 
     Ritorna:
-    - dict: Dizionario con i DataFrame di RMS aggregata per ciascun partecipante.
+    dict: Dizionario con i DataFrame di RMS aggregata per ciascun partecipante.
     """
     aggregated_dataframes = {}
     eeg_columns = ['alpha', 'beta', 'delta', 'gamma', 'theta']
@@ -359,7 +347,7 @@ def compute_aggregated_rms_amplitudes(normalized_segmented_dataframes, log_dir):
         df_game1_norm, df_game2_norm = dfs
         log_file_path = os.path.join(log_dir, f"{participant_id}.txt")
 
-        # Estrai i timestamp dal log (in millisecondi)
+        # Estrai i timestamp dal log (che sono in millisecondi)
         timestamps = extract_timestamps_from_log(log_file_path, participant_id)
         if timestamps is None:
             continue
@@ -368,44 +356,58 @@ def compute_aggregated_rms_amplitudes(normalized_segmented_dataframes, log_dir):
         timestamps = {key: value / 1000.0 for key, value in timestamps.items()}
 
         # Funzione per calcolare la RMS per un intervallo specifico
-        def compute_rms(df, start, end, skip_start=1.0):
-            """ Calcola la RMS su un intervallo specifico, saltando i primi 'skip_start' secondi """
+        def compute_rms(df, start, end, exclude_intervals=None, skip_start=1.0):
+            """ Calcola la Root Mean Square su un intervallo specifico, saltando i primi 'skip_start' secondi
+                 ed escludendo specifici sotto-intervalli """
             df_interval = df[(df["Timestamp"] >= start + skip_start) & (df["Timestamp"] <= end)]
+            
+            # Rimuovi i dati all'interno degli intervalli da escludere
+            if exclude_intervals:
+                for exc_start, exc_end in exclude_intervals:
+                    df_interval = df_interval[(df_interval["Timestamp"] < exc_start) | (df_interval["Timestamp"] > exc_end)]
+            
             if df_interval.empty:
                 return {band: [np.nan] * 8 for band in eeg_columns}  # Se vuoto, restituisci NaN
 
             rms_values = {}
             for band in eeg_columns:
-                values = np.array(df_interval[band].to_list())  # Convertiamo in array NumPy
+                values = np.array(df_interval[band].to_list())  # Converte direttamente in array NumPy
                 rms_values[band] = np.sqrt(np.mean(np.square(values), axis=0))  # RMS per ogni canale
 
             return rms_values
 
-        # **Stessi intervalli di compute_aggregated_ptp_amplitudes**
+        # Definizione degli intervalli per il primo gioco (timestamp ora in secondi)
         game1_intervals = [
             (timestamps["Avvio del primo gioco"], timestamps["primo iGEQ mostrato, gioco messo in pausa"]),
             (timestamps["primo iGEQ terminato, gioco ripreso"], timestamps["secondo iGEQ mostrato, gioco messo in pausa"]),
-            (timestamps["secondo iGEQ terminato, gioco ripreso"], timestamps["Chiusura del primo gioco"])
+            (timestamps["Avvio del primo gioco"], timestamps["Chiusura del primo gioco"], [
+                (timestamps["primo iGEQ mostrato, gioco messo in pausa"], timestamps["primo iGEQ terminato, gioco ripreso"]),
+                (timestamps["secondo iGEQ mostrato, gioco messo in pausa"], timestamps["secondo iGEQ terminato, gioco ripreso"])
+            ])
         ]
 
+        # Definizione degli intervalli per il secondo gioco (timestamp ora in secondi)
         game2_intervals = [
             (timestamps["Avvio secondo gioco"], timestamps["terzo iGEQ mostrato, gioco messo in pausa"]),
             (timestamps["terzo iGEQ terminato, gioco ripreso"], timestamps["quarto iGEQ mostrato, gioco messo in pausa"]),
-            (timestamps["quarto iGEQ terminato, gioco ripreso"], timestamps["Chiusura secondo gioco"])
+            (timestamps["Avvio secondo gioco"], timestamps["Chiusura secondo gioco"], [
+                (timestamps["terzo iGEQ mostrato, gioco messo in pausa"], timestamps["terzo iGEQ terminato, gioco ripreso"]),
+                (timestamps["quarto iGEQ mostrato, gioco messo in pausa"], timestamps["quarto iGEQ terminato, gioco ripreso"])
+            ])
         ]
 
-        # **Calcolo delle RMS per i tre intervalli di ogni gioco**
-        game1_rms = [compute_rms(df_game1_norm, *interval) for interval in game1_intervals]
-        game2_rms = [compute_rms(df_game2_norm, *interval) for interval in game2_intervals]
+        # Calcolo delle RMS per i tre intervalli di ogni gioco
+        game1_rms = [compute_rms(df_game1_norm, *interval[:2], exclude_intervals=interval[2] if len(interval) > 2 else None) for interval in game1_intervals]
+        game2_rms = [compute_rms(df_game2_norm, *interval[:2], exclude_intervals=interval[2] if len(interval) > 2 else None) for interval in game2_intervals]
 
-        # **Creazione dei DataFrame**
+        # Creazione dei DataFrame
         df_game1_rms = pd.DataFrame(game1_rms)
-        df_game1_rms.insert(0, "Interval", ["1st", "2nd", "Last Segment"])
+        df_game1_rms.insert(0, "Interval", ["1st", "2nd", "Full w/o Pauses"])
 
         df_game2_rms = pd.DataFrame(game2_rms)
-        df_game2_rms.insert(0, "Interval", ["1st", "2nd", "Last Segment"])
+        df_game2_rms.insert(0, "Interval", ["1st", "2nd", "Full w/o Pauses"])
 
-        # **Salviamo i DataFrame nel dizionario finale**
+        # Salviamo i DataFrame nel dizionario finale
         aggregated_dataframes[participant_id] = {
             "game1_rms": df_game1_rms,
             "game2_rms": df_game2_rms
@@ -442,9 +444,24 @@ def compute_aggregated_ptp_amplitudes(normalized_segmented_dataframes, log_dir):
         timestamps = {key: value / 1000.0 for key, value in timestamps.items()}
 
         # Funzione per calcolare la Peak-to-Peak per un intervallo specifico
-        def compute_ptp(df, start, end, skip_start=1.0):
-            """ Calcola la Peak-to-Peak su un intervallo specifico, saltando i primi 'skip_start' secondi """
+        def compute_ptp(df, start, end, exclude_intervals=None, skip_start=1.0):
+            """ Calcola la Peak-to-Peak su un intervallo specifico, saltando i primi 'skip_start' secondi
+                ed escludendo specifici sotto-intervalli """
             df_interval = df[(df["Timestamp"] >= start + skip_start) & (df["Timestamp"] <= end)]
+            
+            # Stampa il numero di righe prima dell'esclusione
+            print(f"Partecipante: {participant_id}, Intervallo: {start} - {end}")
+            print(f"Numero di righe prima dell'esclusione: {len(df_interval)}")
+            
+            # Rimuovi i dati all'interno degli intervalli da escludere
+            if exclude_intervals:
+                for exc_start, exc_end in exclude_intervals:
+                    df_interval = df_interval[(df_interval["Timestamp"] < exc_start) | (df_interval["Timestamp"] > exc_end)]
+            
+            # Stampa il numero di righe dopo l'esclusione
+            print(f"Numero di righe dopo l'esclusione: {len(df_interval)}")
+            print("-" * 50)
+            
             if df_interval.empty:
                 return {band: [np.nan] * 8 for band in eeg_columns}  # Se vuoto, restituisci NaN
 
@@ -459,121 +476,37 @@ def compute_aggregated_ptp_amplitudes(normalized_segmented_dataframes, log_dir):
         game1_intervals = [
             (timestamps["Avvio del primo gioco"], timestamps["primo iGEQ mostrato, gioco messo in pausa"]),
             (timestamps["primo iGEQ terminato, gioco ripreso"], timestamps["secondo iGEQ mostrato, gioco messo in pausa"]),
-            (timestamps["secondo iGEQ terminato, gioco ripreso"], timestamps["Chiusura del primo gioco"])
+            (timestamps["Avvio del primo gioco"], timestamps["Chiusura del primo gioco"], [
+                (timestamps["primo iGEQ mostrato, gioco messo in pausa"], timestamps["primo iGEQ terminato, gioco ripreso"]),
+                (timestamps["secondo iGEQ mostrato, gioco messo in pausa"], timestamps["secondo iGEQ terminato, gioco ripreso"])
+            ])
         ]
 
         # Definizione degli intervalli per il secondo gioco (timestamp ora in secondi)
         game2_intervals = [
             (timestamps["Avvio secondo gioco"], timestamps["terzo iGEQ mostrato, gioco messo in pausa"]),
             (timestamps["terzo iGEQ terminato, gioco ripreso"], timestamps["quarto iGEQ mostrato, gioco messo in pausa"]),
-            (timestamps["quarto iGEQ terminato, gioco ripreso"], timestamps["Chiusura secondo gioco"])
+            (timestamps["Avvio secondo gioco"], timestamps["Chiusura secondo gioco"], [
+                (timestamps["terzo iGEQ mostrato, gioco messo in pausa"], timestamps["terzo iGEQ terminato, gioco ripreso"]),
+                (timestamps["quarto iGEQ mostrato, gioco messo in pausa"], timestamps["quarto iGEQ terminato, gioco ripreso"])
+            ])
         ]
 
         # Calcolo delle Peak-to-Peak per i tre intervalli di ogni gioco
-        game1_ptp = [compute_ptp(df_game1_norm, *interval) for interval in game1_intervals]
-        game2_ptp = [compute_ptp(df_game2_norm, *interval) for interval in game2_intervals]
+        game1_ptp = [compute_ptp(df_game1_norm, *interval[:2], exclude_intervals=interval[2] if len(interval) > 2 else None) for interval in game1_intervals]
+        game2_ptp = [compute_ptp(df_game2_norm, *interval[:2], exclude_intervals=interval[2] if len(interval) > 2 else None) for interval in game2_intervals]
 
         # Creazione dei DataFrame
         df_game1_ptp = pd.DataFrame(game1_ptp)
-        df_game1_ptp.insert(0, "Interval", ["1st", "2nd", "Last Segment"])
+        df_game1_ptp.insert(0, "Interval", ["1st", "2nd", "Full w/o Pauses"])
 
         df_game2_ptp = pd.DataFrame(game2_ptp)
-        df_game2_ptp.insert(0, "Interval", ["1st", "2nd", "Last Segment"])
+        df_game2_ptp.insert(0, "Interval", ["1st", "2nd", "Full w/o Pauses"])
 
         # Salviamo i DataFrame nel dizionario finale
         aggregated_dataframes[participant_id] = {
             "game1_ptp": df_game1_ptp,
             "game2_ptp": df_game2_ptp
-        }
-
-    return aggregated_dataframes
-
-def compute_band_specific_ptp_amplitudes(normalized_segmented_dataframes, log_dir):
-    """
-    Calcola le ampiezze Peak-to-Peak (PtP) per ogni banda EEG e ogni canale,
-    restituendo tre righe per ogni gioco (sei righe in totale per partecipante).
-    
-    Utilizza la metrica Peak-to-Peak (massimo - minimo) per tutte le bande EEG.
-    Questa metrica rappresenta l'escursione totale del segnale ed è utile per 
-    valutare la variabilità complessiva dell'attività cerebrale.
-
-    Parametri:
-    normalized_segmented_dataframes (dict): Dizionario contenente i DataFrame normalizzati per ogni partecipante.
-                                            I timestamp nei DataFrame sono in **secondi**.
-    log_dir (str): Percorso della cartella dei log. I timestamp nei log sono in **millisecondi**.
-
-    Ritorna:
-    dict: Dizionario con i DataFrame di ampiezze PtP per ciascun partecipante.
-    """
-    import os
-    import numpy as np
-    import pandas as pd
-    
-    aggregated_dataframes = {}
-    eeg_columns = ['alpha', 'beta', 'delta', 'gamma', 'theta']
-
-    for participant_id, dfs in normalized_segmented_dataframes.items():
-        df_game1_norm, df_game2_norm = dfs
-        log_file_path = os.path.join(log_dir, f"{participant_id}.txt")
-
-        # Estrai i timestamp dal log (che sono in millisecondi)
-        timestamps = extract_timestamps_from_log(log_file_path, participant_id)
-        if timestamps is None:
-            continue
-
-        # Convertiamo i timestamp dei log da millisecondi a secondi
-        timestamps = {key: value / 1000.0 for key, value in timestamps.items()}
-
-        # Funzione per calcolare la Peak-to-Peak per un intervallo specifico
-        def compute_ptp(df, start, end, skip_start=1.0):
-            """ 
-            Calcola la Peak-to-Peak (massimo - minimo) su un intervallo specifico, 
-            saltando i primi 'skip_start' secondi.
-            """
-            df_interval = df[(df["Timestamp"] >= start + skip_start) & (df["Timestamp"] <= end)]
-            if df_interval.empty:
-                return {band: [np.nan] * 8 for band in eeg_columns}  # Se vuoto, restituisci NaN
-
-            ptp_values = {}
-            
-            # Calcolo Peak-to-Peak per ogni banda
-            for band in eeg_columns:
-                values = np.array(df_interval[band].to_list())
-                ptp_values[band] = np.max(values, axis=0) - np.min(values, axis=0)
-            
-            return ptp_values
-
-        # Definizione degli intervalli per il primo gioco (timestamp ora in secondi)
-        game1_intervals = [
-            (timestamps["Avvio del primo gioco"], timestamps["primo iGEQ mostrato, gioco messo in pausa"]),
-            (timestamps["primo iGEQ terminato, gioco ripreso"], timestamps["secondo iGEQ mostrato, gioco messo in pausa"]),
-            (timestamps["secondo iGEQ terminato, gioco ripreso"], timestamps["Chiusura del primo gioco"])
-        ]
-
-        # Definizione degli intervalli per il secondo gioco (timestamp ora in secondi)
-        game2_intervals = [
-            (timestamps["Avvio secondo gioco"], timestamps["terzo iGEQ mostrato, gioco messo in pausa"]),
-            (timestamps["terzo iGEQ terminato, gioco ripreso"], timestamps["quarto iGEQ mostrato, gioco messo in pausa"]),
-            (timestamps["quarto iGEQ terminato, gioco ripreso"], timestamps["Chiusura secondo gioco"])
-        ]
-
-        # Calcolo della Peak-to-Peak per i tre intervalli di ogni gioco
-        game1_ptp = [compute_ptp(df_game1_norm, *interval) for interval in game1_intervals]
-        game2_ptp = [compute_ptp(df_game2_norm, *interval) for interval in game2_intervals]
-
-        # Creazione dei DataFrame
-        df_game1_ptp = pd.DataFrame(game1_ptp)
-        df_game1_ptp.insert(0, "Interval", ["1st", "2nd", "Last Segment"])
-        df_game1_ptp.insert(1, "Game", ["Game1"] * 3)
-
-        df_game2_ptp = pd.DataFrame(game2_ptp)
-        df_game2_ptp.insert(0, "Interval", ["1st", "2nd", "Last Segment"])
-        df_game2_ptp.insert(1, "Game", ["Game2"] * 3)
-
-        # Salviamo i DataFrame nel dizionario finale
-        aggregated_dataframes[participant_id] = {
-            "game1_band_ptp": df_game1_ptp,
-            "game2_band_ptp": df_game2_ptp
         }
 
     return aggregated_dataframes

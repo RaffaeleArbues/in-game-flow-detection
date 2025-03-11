@@ -27,13 +27,13 @@ def main():
     # aggregati con i tre tipi di calcolo delle ampiezze
     aggregated_rms = dfe.compute_aggregated_rms_amplitudes(normalized_segmented_dataframes, log_file_path)
     aggregated_ptp = dfe.compute_aggregated_ptp_amplitudes(normalized_segmented_dataframes, log_file_path)
-    aggregated_bs = dfe.compute_band_specific_ptp_amplitudes(normalized_segmented_dataframes, log_file_path)
 
     df_noto_dict, df_ignoto_dict = quest.carica_questionari(path_to_quest)
+    print(aggregated_rms)
 
 
     # Calcolo delle correlazioni per RMS
-    correlation_ptp = corr.spearman_corr_with_p(aggregated_ptp, df_noto_dict, df_ignoto_dict, "ptp")
+    df_flow = corr.create_flow_dataframe(aggregated_rms, df_noto_dict, df_ignoto_dict, "rms")
     #correlation_ptp.to_csv("df_spearman_ptp.csv", index=False)
 
     #print(correlation_rms)
