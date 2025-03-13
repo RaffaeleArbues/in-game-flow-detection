@@ -29,11 +29,16 @@ def main():
     aggregated_ptp = dfe.compute_aggregated_ptp_amplitudes(normalized_segmented_dataframes, log_file_path)
 
     df_noto_dict, df_ignoto_dict = quest.carica_questionari(path_to_quest)
-    print(aggregated_rms)
+    #print(aggregated_rms)
 
 
     # Calcolo delle correlazioni per RMS
-    df_flow = corr.create_flow_dataframe(aggregated_rms, df_noto_dict, df_ignoto_dict, "rms")
+    df_flow_ptp = corr.create_flow_dataframe(aggregated_ptp, df_noto_dict, df_ignoto_dict, "ptp")
+    df_flow_rms = corr.create_flow_dataframe(aggregated_rms, df_noto_dict, df_ignoto_dict, "rms")
+    
+    # Calcolo dei mixed models
+    corr.run_mixed_models(df_flow_ptp)
+
     #correlation_ptp.to_csv("df_spearman_ptp.csv", index=False)
 
     #print(correlation_rms)

@@ -1,13 +1,15 @@
 import pandas as pd
-import os
-import matplotlib.pyplot as plt
 import numpy as np
-from scipy.stats import spearmanr, combine_pvalues
+import rpy2
+import rpy2.robjects as ro
+from rpy2.robjects import pandas2ri
+
 
 def create_flow_dataframe(aggregated_amplitudes, df_noto_dict, df_ignoto_dict, method):
     """
     Crea un DataFrame con le informazioni di partecipanti, tipo di gioco, intervallo, punteggio di flow
     e valori dei sensori per ciascuna banda. Include anche il punteggio di flow normalizzato.
+    La funzione è stata modificata per integrare l'informazione della banda nei nomi delle colonne dei sensori.
 
     Parametri:
     - aggregated_amplitudes (dict): Dizionario con i DataFrame delle ampiezze EEG per ogni partecipante.
@@ -18,9 +20,6 @@ def create_flow_dataframe(aggregated_amplitudes, df_noto_dict, df_ignoto_dict, m
     Ritorna:
     - DataFrame con i dati formattati secondo la struttura richiesta.
     """    
-    # Importa pandas se non è già importato
-    import pandas as pd
-    import numpy as np
     
     # Configurazione delle mappature
     interval_map = {
@@ -157,47 +156,48 @@ def create_flow_dataframe(aggregated_amplitudes, df_noto_dict, df_ignoto_dict, m
             if flow_noto is None and flow_ignoto is None:
                 continue
                 
-            # Per ogni banda
-            for banda in bands:
-                try:
-                    # Ottieni i valori EEG
-                    noto_eeg = df_noto[banda].iloc[interval_idx]
-                    ignoto_eeg = df_ignoto[banda].iloc[interval_idx]
-                    
-                    # Crea le righe per il dataframe
-                    if flow_noto is not None:
-                        row_noto = {
-                            "Partecipant_ID": participant,
-                            "Tipo_Gioco": "Gioco_Noto",
-                            "Intervallo": questionnaire_type,
-                            "Flow": flow_noto,
-                            "Normalized_Flow": normalized_flow_noto,
-                            "Banda": banda
-                        }
-                        # Aggiungi i valori dei sensori
+            # Crea le righe per il dataframe con tutte le bande in un'unica riga
+            if flow_noto is not None:
+                row_noto = {
+                    "Partecipant_ID": participant,
+                    "Tipo_Gioco": "Gioco_Noto",
+                    "Intervallo": questionnaire_type,
+                    "Flow": flow_noto,
+                    "Normalized_Flow": normalized_flow_noto
+                }
+                # Aggiungi i valori dei sensori per ogni banda
+                for banda in bands:
+                    try:
+                        noto_eeg = df_noto[banda].iloc[interval_idx]
                         for i, sensor in enumerate(sensors):
-                            row_noto[sensor] = noto_eeg[i]
-                            
-                        all_data.append(row_noto)
-                        
-                    if flow_ignoto is not None:
-                        row_ignoto = {
-                            "Partecipant_ID": participant,
-                            "Tipo_Gioco": "Gioco_Ignoto",
-                            "Intervallo": questionnaire_type,
-                            "Flow": flow_ignoto,
-                            "Normalized_Flow": normalized_flow_ignoto,
-                            "Banda": banda
-                        }
-                        # Aggiungi i valori dei sensori
+                            row_noto[f"{sensor}_{banda}"] = noto_eeg[i]
+                    except Exception as e:
+                        print(f"Errore con {participant}, intervallo {interval_idx}, banda {banda}: {e}")
                         for i, sensor in enumerate(sensors):
-                            row_ignoto[sensor] = ignoto_eeg[i]
-                            
-                        all_data.append(row_ignoto)
-                        
-                except Exception as e:
-                    print(f"Errore con {participant}, intervallo {interval_idx}, banda {banda}: {e}")
-                    continue
+                            row_noto[f"{sensor}_{banda}"] = None
+                
+                all_data.append(row_noto)
+                
+            if flow_ignoto is not None:
+                row_ignoto = {
+                    "Partecipant_ID": participant,
+                    "Tipo_Gioco": "Gioco_Ignoto",
+                    "Intervallo": questionnaire_type,
+                    "Flow": flow_ignoto,
+                    "Normalized_Flow": normalized_flow_ignoto
+                }
+                # Aggiungi i valori dei sensori per ogni banda
+                for banda in bands:
+                    try:
+                        ignoto_eeg = df_ignoto[banda].iloc[interval_idx]
+                        for i, sensor in enumerate(sensors):
+                            row_ignoto[f"{sensor}_{banda}"] = ignoto_eeg[i]
+                    except Exception as e:
+                        print(f"Errore con {participant}, intervallo {interval_idx}, banda {banda}: {e}")
+                        for i, sensor in enumerate(sensors):
+                            row_ignoto[f"{sensor}_{banda}"] = None
+                
+                all_data.append(row_ignoto)
     
     # Crea e salva il dataframe
     df_all_data = pd.DataFrame(all_data)
@@ -223,122 +223,155 @@ def calculate_flow_score(df_interval, questions):
     
     return sum(scores) / len(scores) if scores else None
 
+# Attiva la conversione automatica tra Pandas e R
+rpy2.robjects.pandas2ri.activate()
 
-def generate_correlation_table(correlation_df, output_corr_file, output_pval_file):
+def run_mixed_models(df):
     """
-    Genera una tabella aggregata delle correlazioni di Spearman tra i gruppi di sensori EEG e le risposte ai questionari,
-    ed esporta i risultati sia per le correlazioni che per i p-values.
-    
-    Parametri:
-    - correlation_df (DataFrame): DataFrame contenente i dati di correlazione unificati.
-    - output_corr_file (str): Nome del file CSV per le correlazioni.
-    - output_pval_file (str): Nome del file CSV per i p-values.
-    
-    Ritorna:
-    - DataFrame con le correlazioni aggregate per ogni domanda e regione cerebrale.
+    Esegue il modello completo e i modelli per ogni banda (Alpha, Beta, Delta, Gamma, Theta) in R.
+    Calcola la devianza spiegata per ogni fixed effect e il power test.
+    Salva i risultati in file separati.
     """
-    # Definizione delle aree cerebrali
-    sensor_groups = {
-        "Frontale Left": ["F5"],
-        "Frontale Right": ["F6"],
-        "Centrale Left": ["C3", "CP3"],
-        "Centrale Right": ["C4", "CP4"],
-        "Occipitale Left": ["PO3"],
-        "Occipitale Right": ["PO4"]
-    }
-    
-    # Bande di frequenza
-    bands = ['alpha', 'beta', 'delta', 'gamma', 'theta']
-    
-    # Domande da includere nella tabella
-    domande_selezionate = ["iGEQ_Q5", "iGEQ_Q10", "GEQ_Q5", "GEQ_Q13", "GEQ_Q25", "GEQ_Q28", "GEQ_Q31"]
-    
-    table_corr_data = []  # Lista per salvare i dati della tabella delle correlazioni
-    table_pval_data = []  # Lista per salvare i dati della tabella dei p-values
-    
-    for domanda in domande_selezionate:
-        row_corr = {"Domanda": domanda}
-        row_pval = {"Domanda": domanda}
+
+    # **Convertiamo Intervallo e Tipo_Gioco in numeri**
+    mapping_intervallo = {"iGEQ_1": 1, "iGEQ_2": 2, "GEQ": 3}
+    mapping_tipo_gioco = {"Gioco_Noto": 1, "Gioco_Ignoto": 0}
+
+    df["Intervallo"] = df["Intervallo"].map(mapping_intervallo)
+    df["Tipo_Gioco"] = df["Tipo_Gioco"].map(mapping_tipo_gioco)
+
+    # **Rimuoviamo righe con NaN**
+    df_cleaned = df.dropna()
+
+    if df_cleaned.empty:
+        raise ValueError("Errore: il DataFrame è vuoto dopo la rimozione dei NaN!")
+
+    # **Passa il DataFrame a R**
+    ro.globalenv['df'] = rpy2.robjects.pandas2ri.py2rpy(df_cleaned)
+
+    # **Esegui lo script R**
+    ro.r("""
+        library(lme4)
+        library(lmerTest)
+        library(MuMIn)  # Per calcolare R² dei modelli misti
+        library(simr)   # Per calcolare il power test
+
+        # File di output
+        output_full <- "full_model_results.txt"
+        output_alpha <- "alpha_model_results.txt"
+        output_beta <- "beta_model_results.txt"
+        output_delta <- "delta_model_results.txt"
+        output_gamma <- "gamma_model_results.txt"
+        output_theta <- "theta_model_results.txt"
+
+        # Funzione per calcolare la devianza spiegata #
+        calc_devianza <- function(model, var, file) {
+            formula_ridotta <- as.formula(paste(". ~ . -", var))
+            model_ridotto <- update(model, formula_ridotta)
+            LRT <- anova(model_ridotto, model)
+            out <- capture.output(LRT)
+            cat("\nDeviance Explained for", var, "\n", out, file=file, sep="\n", append=TRUE)
+        }
+
+        #  Modello COMPLETO #
+        model_full <- lmer(Normalized_Flow ~ (CP3_alpha + C3_alpha + F5_alpha + PO3_alpha + PO4_alpha + 
+                                   F6_alpha + C4_alpha + CP4_alpha + CP3_beta + C3_beta + 
+                                   F5_beta + PO3_beta + PO4_beta + F6_beta + C4_beta + CP4_beta +
+                                   CP3_delta + C3_delta + F5_delta + PO3_delta + PO4_delta + 
+                                   F6_delta + C4_delta + CP4_delta + CP3_gamma + C3_gamma + 
+                                   F5_gamma + PO3_gamma + PO4_gamma + F6_gamma + C4_gamma + 
+                                   CP4_gamma + CP3_theta + C3_theta + F5_theta + PO3_theta + 
+                                   PO4_theta + F6_theta + C4_theta + CP4_theta + Intervallo + Tipo_Gioco) + 
+                                   (1 | Partecipant_ID), data=df, REML=FALSE)
+
+        # Salviamo il summary del modello completo
+        out <- capture.output(summary(model_full))
+        cat("\n*Linear Mixed Model - Full Model*\n", out, file=output_full, sep="\n", append=FALSE)
         
-        for band in bands:
-            for region, sensors in sensor_groups.items():
-                # Filtra i dati per banda, sensore e domanda
-                region_data = correlation_df[
-                    (correlation_df["Banda"] == band) & 
-                    (correlation_df["Sensore"].isin(sensors)) & 
-                    (correlation_df["Domanda"] == domanda)
-                ]
-                
-                if region_data.empty:
-                    row_corr[f"{band} {region}"] = np.nan
-                    row_pval[f"{band} {region}"] = np.nan
-                    continue
-                
-                # Calcola la media delle correlazioni per la regione (e arrotondo a 3 cifre decimali)
-                region_corr = region_data["Spearman Corr"].mean()
-                row_corr[f"{band} {region}"] = round(region_corr, 3) if not np.isnan(region_corr) else np.nan
-                
-                # Calcola la media dei p-values per la regione (e arrotondo a 3 cifre decimali)
-                region_pval = region_data["p-value"].mean()
-                row_pval[f"{band} {region}"] = round(region_pval, 3) if not np.isnan(region_pval) else np.nan
+        # Calcoliamo R^2
+        out <- capture.output(r.squaredGLMM(model_full))
+        cat("\nR-square - Full Model\n", out, file=output_full, sep="\n", append=TRUE)
         
-        table_corr_data.append(row_corr)
-        table_pval_data.append(row_pval)
-    
-    # Creazione DataFrame per correlazioni e p-values
-    table_corr_df = pd.DataFrame(table_corr_data)
-    table_pval_df = pd.DataFrame(table_pval_data)
-    
-    if table_corr_df.empty:
-        print("ERRORE: Nessun dato valido trovato per la tabella di correlazione.")
-        return None
-    
-    # **Aggiunta della riga "Flow"** come media delle domande per entrambi i file
-    flow_corr_row = {"Domanda": "Flow"}
-    flow_pval_row = {"Domanda": "Flow"}
-    for col in table_corr_df.columns[1:]:  # Escludiamo la colonna "Domanda"
-        flow_corr_row[col] = round(table_corr_df[col].mean(), 3) if not np.isnan(table_corr_df[col].mean()) else np.nan
-        flow_pval_row[col] = round(table_pval_df[col].mean(), 3) if not np.isnan(table_pval_df[col].mean()) else np.nan
-    
-    # **Aggiungiamo la riga "Flow" alla tabella**
-    table_corr_df = pd.concat([table_corr_df, pd.DataFrame([flow_corr_row])], ignore_index=True)
-    table_pval_df = pd.concat([table_pval_df, pd.DataFrame([flow_pval_row])], ignore_index=True)
-    
-    # Esporta in CSV
-    table_corr_df.to_csv(output_corr_file, index=False)
-    table_pval_df.to_csv(output_pval_file, index=False)
-    print(f"Esportata tabella delle correlazioni: {output_corr_file}")
-    print(f"Esportata tabella dei p-values: {output_pval_file}")
-    
-    return table_corr_df
+        # Salviamo i coefficienti
+        out <- capture.output(summary(model_full)$coefficients)
+        cat("\nCoefficients - Full Model\n", out, file=output_full, sep="\n", append=TRUE)
 
+        # Calcoliamo la devianza spiegata per ogni variabile nel modello completo
+        for (var in names(fixef(model_full))) {
+            if (var != "(Intercept)") {
+                calc_devianza(model_full, var, output_full)
+            }
+        }
 
-def filter_significant_correlations(corr_file, pval_file, output_file, threshold=0.10):
-    """
-    Filtra un file di correlazioni, mantenendo solo le righe e colonne in cui almeno un valore di p-value
-    è inferiore alla soglia specificata.
-    
-    Parametri:
-    - corr_file (str): Path del file CSV contenente la matrice di correlazione.
-    - pval_file (str): Path del file CSV contenente la matrice di p-values.
-    - output_file (str): Path del file CSV in cui salvare i risultati filtrati.
-    - threshold (float): Soglia di significatività per il p-value (default = 0.10).
-    
-    Ritorna:
-    - None: Salva il risultato in output_file.
-    """
-    # Carica i dati
-    corr_df = pd.read_csv(corr_file, index_col=0)
-    pval_df = pd.read_csv(pval_file, index_col=0)
-    
-    # Maschera: True se almeno un p-value nella riga è sotto il threshold
-    row_mask = (pval_df < threshold).any(axis=1)
-    col_mask = (pval_df < threshold).any(axis=0)
-    
-    # Filtra righe e colonne
-    filtered_corr = corr_df.loc[row_mask, col_mask]
-    
-    # Salva il file filtrato
-    filtered_corr.to_csv(output_file)
-    
-    print(f"File salvato con successo: {output_file}")
+        # Calcoliamo il power test per il modello completo
+        print("Calcolando powerSim per il modello completo...")
+        power_full <- powerSim(model_full, test = fixed, nsim = 200) 
+        print("PowerSim per il modello completo completato.")
+        out <- capture.output(power_full)
+        cat("\nPower Analysis - Full Model\n", out, file=output_full, sep="\n", append=TRUE)
+
+        # Modelli Separati per Banda #
+
+        # Lista delle bande e dei rispettivi output file
+        bande <- list(
+            "Alpha" = c("CP3_alpha", "C3_alpha", "F5_alpha", "PO3_alpha", "PO4_alpha", "F6_alpha", "C4_alpha", "CP4_alpha"),
+            "Beta"  = c("CP3_beta", "C3_beta", "F5_beta", "PO3_beta", "PO4_beta", "F6_beta", "C4_beta", "CP4_beta"),
+            "Delta" = c("CP3_delta", "C3_delta", "F5_delta", "PO3_delta", "PO4_delta", "F6_delta", "C4_delta", "CP4_delta"),
+            "Gamma" = c("CP3_gamma", "C3_gamma", "F5_gamma", "PO3_gamma", "PO4_gamma", "F6_gamma", "C4_gamma", "CP4_gamma"),
+            "Theta" = c("CP3_theta", "C3_theta", "F5_theta", "PO3_theta", "PO4_theta", "F6_theta", "C4_theta", "CP4_theta")
+        )
+
+        output_files <- list(
+            "Alpha" = output_alpha,
+            "Beta" = output_beta,
+            "Delta" = output_delta,
+            "Gamma" = output_gamma,
+            "Theta" = output_theta
+        )
+
+        # Creiamo ed eseguiamo i modelli per ogni banda e calcoliamo la devianza spiegata + power test
+        for (banda in names(bande)) {
+            formula <- paste("Normalized_Flow ~ (", paste(bande[[banda]], collapse=" + "), " + Intervallo + Tipo_Gioco) + (1 | Partecipant_ID)")
+            model <- lmer(as.formula(formula), data=df, REML=FALSE)
+            
+            # Salviamo il summary
+            out <- capture.output(summary(model))
+            cat("\n*Linear Mixed Model -", banda, "Model*\n", out, file=output_files[[banda]], sep="\n", append=FALSE)
+            
+            # Calcoliamo R² e lo salviamo
+            out <- capture.output(r.squaredGLMM(model))
+            cat("\nR-square -", banda, "Model\n", out, file=output_files[[banda]], sep="\n", append=TRUE)
+            
+            # Salviamo i coefficienti
+            out <- capture.output(summary(model)$coefficients)
+            cat("\nCoefficients -", banda, "Model\n", out, file=output_files[[banda]], sep="\n", append=TRUE)
+            
+            # Calcoliamo la devianza spiegata per ogni variabile nel modello
+            for (var in names(fixef(model))) {
+                if (var != "(Intercept)") {
+                    calc_devianza(model, var, output_files[[banda]])
+                }
+            }
+
+            # Calcoliamo la devianza spiegata per ogni variabile nel modello
+            for (var in names(fixef(model))) {
+                if (var != "(Intercept)") {
+                    calc_devianza(model, var, output_files[[banda]])
+                }
+            }
+
+            print(paste("Calcolando powerSim per il modello:", banda, "..."))
+            power_model <- powerSim(model, test = fixed, nsim = 200)  # Ridotto a 200 simulazioni
+            print(paste("PowerSim per", banda, "completato."))
+
+            out <- capture.output(power_model)
+            cat("\nPower Analysis -", banda, "Model\n", out, file=output_files[[banda]], sep="\n", append=TRUE)
+        }
+    """)
+
+    print("Risultati salvati nei file:")
+    print("- full_model_results.txt")
+    print("- alpha_model_results.txt")
+    print("- beta_model_results.txt")
+    print("- delta_model_results.txt")
+    print("- gamma_model_results.txt")
