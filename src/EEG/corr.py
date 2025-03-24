@@ -5,7 +5,7 @@ import rpy2.robjects as ro
 from rpy2.robjects import pandas2ri
 
 
-def create_flow_dataframe(aggregated_amplitudes, df_noto_dict, df_ignoto_dict, method):
+def create_EEG_flow_dataframe(aggregated_amplitudes, df_noto_dict, df_ignoto_dict, method):
     """
     Crea un DataFrame con le informazioni di partecipanti, tipo di gioco, intervallo, punteggio di flow
     e valori dei sensori per ciascuna banda. Include anche il punteggio di flow normalizzato.
@@ -90,7 +90,7 @@ def create_flow_dataframe(aggregated_amplitudes, df_noto_dict, df_ignoto_dict, m
             flow_noto = calculate_flow_score(df_noto_interval, flow_questions[interval_idx])
             flow_ignoto = calculate_flow_score(df_ignoto_interval, flow_questions[interval_idx])
             
-            # Aggiungi i punteggi validi alla lista dei punteggi del partecipante
+            # Aggiungi i punteggi validi alla lista dei punteggi del partecipante (sia nel gioco noto che in quello ignoto)
             if flow_noto is not None:
                 participant_flow_scores[participant].append(flow_noto)
             if flow_ignoto is not None:

@@ -1,7 +1,7 @@
 import src.EEG.dataFrameEEG as dfe
 import os
 import pandas as pd
-from scipy.signal import butter, filtfilt, find_peaks, welch
+from scipy.signal import butter, filtfilt, find_peaks
 import neurokit2 as nk
 import numpy as np
 
@@ -366,7 +366,7 @@ def extract_eda_metrics(norm_eda, log_dir):
             """
 
             # Rilevazione dei picchi corretta usando scipy.signal.find_peaks
-            peaks, _ = find_peaks(df["eda"])
+            peaks, _ = find_peaks(df["eda_phasic"])
 
             metrics = {
                 "min_eda": df["eda"].min(), 
@@ -381,7 +381,6 @@ def extract_eda_metrics(norm_eda, log_dir):
                 "max_eda_phasic": df["eda_phasic"].max(), 
                 "avg_eda_phasic": df["eda_phasic"].mean(),
 
-                "mu_eda": df["eda"].mean(),
                 "delta_eda": df["eda"].diff().mean(),
 
                 # Tasso medio di decremento: media della derivata negativa dell'EDA
@@ -487,7 +486,7 @@ def extract_bvp_metrics(norm_bvp, log_dir):
             """
 
             if df.empty:
-                return {metric: np.nan for metric in ["mu_bvp", "sigma_bvp", "mu_hr", "delta_hr", "sigma_hr", "SDNN", "RMSSD", "pNN50"]}
+                return {metric: np.nan for metric in ["mu_bvp", "sigma_bvp", "mu_hr", "delta_hr", "sigma_hr", "SDNN", "RMSSD"]}
 
             # Metriche base BVP
             mu_bvp = df["bvp"].mean()
@@ -514,12 +513,6 @@ def extract_bvp_metrics(norm_bvp, log_dir):
                     # tra intervalli NN successivi
                     ibi_diff = np.diff(ibi_values)
                     RMSSD = np.sqrt(np.mean(ibi_diff**2))
-                    
-                    # pNN50: percentuale di differenze successive degli intervalli NN > 50ms
-                    n_pairs = len(ibi_diff)
-                    if n_pairs > 0:
-                        n50 = np.sum(np.abs(ibi_diff) > 50)
-                        pNN50 = (n50 / n_pairs) * 100
 
             return {
                 "mu_bvp": mu_bvp,
@@ -528,8 +521,7 @@ def extract_bvp_metrics(norm_bvp, log_dir):
                 "delta_hr": delta_hr,
                 "sigma_hr": sigma_hr,
                 "SDNN": SDNN,
-                "RMSSD": RMSSD,
-                "pNN50": pNN50
+                "RMSSD": RMSSD
             }
 
         # Funzione per estrarre i dati nei tre intervalli

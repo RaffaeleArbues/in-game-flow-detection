@@ -1,6 +1,7 @@
 import src.EEG.preProcessing as pp
 import src.EEG.dataFrameEEG as dfe
-import src.EEG.corr as corr
+import src.EEG.corr as corrEEG
+import src.physiological.corr as corrPhys
 import src.questionnaire.dataFrameQuest as quest
 import src.physiological.dataFramePhysiological as phys
 import pandas as pd
@@ -38,23 +39,23 @@ def main():
     #print(aggregated_rms)
 
     # Estrazione dei dataframe finali -> eeg con accanto i dati self report corrispondenti. (uno per le ampiezze ptp e l'altro per le ampiezze rms).
-    df_flow_ptp = corr.create_flow_dataframe(aggregated_ptp, df_noto_dict, df_ignoto_dict, "ptp")
-    df_flow_rms = corr.create_flow_dataframe(aggregated_rms, df_noto_dict, df_ignoto_dict, "rms")
+    df_flow_ptp = corrEEG.create_EEG_flow_dataframe(aggregated_ptp, df_noto_dict, df_ignoto_dict, "ptp")
+    df_flow_rms = corrEEG.create_EEG_flow_dataframe(aggregated_rms, df_noto_dict, df_ignoto_dict, "rms")
     
     # Calcolo dei mixed models
-    corr.run_mixed_models(df_flow_rms)
+    corrEEG.run_mixed_models(df_flow_rms)
 
     #correlation_ptp.to_csv("df_spearman_ptp.csv", index=False)
 
     #print(correlation_rms)
 
     # Calcolo delle correlazioni per Peak-to-Peak
-    #correlation_bs = corr.spearman_corr_with_p(aggregated_bs, df_noto_dict, df_ignoto_dict, "ptp")
+    #correlation_bs = corrEEG.spearman_corr_with_p(aggregated_bs, df_noto_dict, df_ignoto_dict, "ptp")
 
     # Calcolo delle correlazioni per Band-Specific
-    #correlation_band = corr.spearman_corr_with_p(aggregated_bs, df_noto_dict, df_ignoto_dict, "band")
+    #correlation_band = corrEEG.spearman_corr_with_p(aggregated_bs, df_noto_dict, df_ignoto_dict, "band")
 
-    #corr.generate_correlation_table(correlation_ptp, "correlation_table.csv", "pvalue_table.csv")
+    #corrEEG.generate_correlation_table(correlation_ptp, "correlation_table.csv", "pvalue_table.csv")
     '''
     
     # PROCESSING PHYSIOLOGICAL DATA
@@ -74,9 +75,12 @@ def main():
     # calcolo le metriche per EDA
     eda_metrics = phys.extract_eda_metrics(norm_eda, log_file_path)
     bvp_metrics = phys.extract_bvp_metrics(norm_bvp_hr, log_file_path)
-    print(bvp_metrics["Rocco_Mennea"][0])  # DataFrame del primo gioco
-    print(bvp_metrics["Rocco_Mennea"][1])  # DataFrame del secondo gioco
-
+    #print(bvp_metrics["Rocco_Mennea"][0])  # DataFrame del primo gioco
+    #print(bvp_metrics["Rocco_Mennea"][1])  # DataFrame del secondo gioco
+    df_noto_dict, df_ignoto_dict = quest.carica_questionari(path_to_quest)
+    df_flow_phys = corrPhys.create_physiological_flow_dataframe(eda_metrics, bvp_metrics, df_noto_dict, df_ignoto_dict)
+    # Calcolo dei mixed models
+    corrPhys.run_physiological_mixed_model(df_flow_phys)
     
     #segmented_hrv = phys.calculate_hrv_per_segment(segmented_dataframes_bvp_hr)
     
@@ -87,7 +91,7 @@ def main():
     # Scegli un participant_id da esportare
     participant_id = "Rocco_Mennea"  # Sostituiscilo con il nome corretto
 
-    
+    '''
     if participant_id in norm_bvp_hr:
         df_game1_normalized_bvp, df_game2_normalized_bvp = norm_bvp_hr[participant_id]
 
@@ -98,7 +102,7 @@ def main():
         print(f"Dati di {participant_id} esportati correttamente!")
     else:
         print(f"Partecipante {participant_id} non trovato nel dataset.")
-    '''
+    
     if participant_id in norm_eda:
         df_game1_eda, df_game2_eda = norm_eda[participant_id]
 
