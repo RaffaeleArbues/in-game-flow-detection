@@ -4,6 +4,7 @@ import src.EEG.corr as corrEEG
 import src.physiological.corr as corrPhys
 import src.questionnaire.dataFrameQuest as quest
 import src.physiological.dataFramePhysiological as phys
+import src.facialAnalysis.dataFrameFacial as face
 import pandas as pd
 import os
 import matplotlib.pyplot as plt
@@ -12,8 +13,10 @@ import numpy as np
 def main():
     path_to_neurosity = "D://Git//PARTECIPANTI Studio di Tesi - Dati Acquisizioni//rawDatasForPreProcessing//EEG"
     path_to_physiological = "D://Git//PARTECIPANTI Studio di Tesi - Dati Acquisizioni//rawDatasForPreProcessing//physiological_separated"
+    path_to_video = "D://Git//PARTECIPANTI Studio di Tesi - Dati Acquisizioni//rawDatasForPreProcessing//video"
     log_file_path = "D://Git//PARTECIPANTI Studio di Tesi - Dati Acquisizioni//rawDatasForPreProcessing//log"
     path_to_quest = "D://Git//PARTECIPANTI Studio di Tesi - Dati Acquisizioni//rawDatasForPreProcessing//questionnaire"
+    output_video = "D://Git//PARTECIPANTI Studio di Tesi - Dati Acquisizioni//rawDatasForPreProcessing//video//splittedIntervals"
 
     # PROCESSING EEG DATA
     '''
@@ -58,8 +61,8 @@ def main():
     #corrEEG.generate_correlation_table(correlation_ptp, "correlation_table.csv", "pvalue_table.csv")
     '''
     
-    # PROCESSING PHYSIOLOGICAL DATA
-
+    # PROCESSING PERIFERIC PHYSIOLOGICAL DATA
+    '''
     # segmented_dataframes è un dizionario che ha come chiavi i "partecipant_id" e associati 3 dataframe corrispondenti ai dati della baseline e i dati dei due giochi giocati
     segmented_dataframes_eda, segmented_dataframes_bvp = phys.split_dataframes(path_to_physiological, log_file_path)
 
@@ -91,7 +94,6 @@ def main():
     # Scegli un participant_id da esportare
     participant_id = "Rocco_Mennea"  # Sostituiscilo con il nome corretto
 
-    '''
     if participant_id in norm_bvp_hr:
         df_game1_normalized_bvp, df_game2_normalized_bvp = norm_bvp_hr[participant_id]
 
@@ -114,6 +116,16 @@ def main():
     else:
         print(f"Partecipante {participant_id} non trovato nel dataset.")
     '''
+
+    # Seleziona i file
+    #face.cut_ffmpeg_segments(path_to_video, log_file_path, output_video)
+
+    # Opzionale: percorso dove salvare i risultati
+    output_folder = "D://Git//PARTECIPANTI Studio di Tesi - Dati Acquisizioni//rawDatasForPreProcessing//video//resultsFex"
+
+    # Esegui l'analisi
+    results = face.analyze_participant_videos(output_video, output_folder)
+
     
 if __name__ == "__main__":
     main()
