@@ -3,6 +3,8 @@ import os
 import pandas as pd
 import subprocess
 from feat import Detector
+from collections import defaultdict
+import numpy as np
 
 def unix_to_seconds(csv_df, target_ts):
     """
@@ -187,3 +189,155 @@ def analyze_participant_videos(main_folder, output_folder=None):
                 print(f"ERRORE durante l'analisi di {video_file}: {str(e)}")
 
     return results
+
+
+def load_facial_data(root_path):
+    data_dict = defaultdict(list)
+    
+    # Scorri ogni partecipante
+    for participant in os.listdir(root_path):
+        participant_path = os.path.join(root_path, participant)
+        if not os.path.isdir(participant_path):
+            continue
+
+        # 1. Baseline
+        baseline_path = os.path.join(participant_path, "baseline")
+        baseline_df = load_and_merge_facial_components(baseline_path)
+        data_dict[participant].append(baseline_df)
+
+        # 2. Game1
+        game1_path = os.path.join(participant_path, "game1")
+        for interval in ["firstInterval", "secondInterval", "fullNoInterruption"]:
+            interval_path = os.path.join(game1_path, interval)
+            df = load_and_merge_facial_components(interval_path)
+            data_dict[participant].append(df)
+
+        # 3. Game2
+        game2_path = os.path.join(participant_path, "game2")
+        for interval in ["firstInterval", "secondInterval", "fullNoInterruption"]:
+            interval_path = os.path.join(game2_path, interval)
+            df = load_and_merge_facial_components(interval_path)
+            data_dict[participant].append(df)
+    
+    return data_dict
+
+def load_and_merge_facial_components(folder_path):
+    try:
+        aus_path = os.path.join(folder_path, "aus.csv")
+        emotions_path = os.path.join(folder_path, "emotions.csv")
+        poses_path = os.path.join(folder_path, "poses.csv")
+
+        aus_df = pd.read_csv(aus_path)
+        emotions_df = pd.read_csv(emotions_path)
+        poses_df = pd.read_csv(poses_path)
+
+        merged_df = pd.concat([aus_df, emotions_df, poses_df], axis=1)
+        return merged_df
+    except Exception as e:
+        print(f"Errore nel caricamento dei file da {folder_path}: {e}")
+        return pd.DataFrame()  # restituisce un dataframe vuoto in caso di errore
+
+def normalize_with_baseline(data_dict):
+    normalized_dict = defaultdict(list)
+
+    for participant, df_list in data_dict.items():
+        baseline_df = df_list[0]
+        
+        if baseline_df is None or baseline_df.empty:
+            print(f"Baseline vuota per {participant}, salto la normalizzazione.")
+            normalized_dict[participant] = df_list
+            continue
+        
+        baseline_mean = baseline_df.mean()
+
+        # Aggiunge la baseline originale
+        normalized_dict[participant].append(baseline_df)
+
+        # Normalizza i segmenti 1–6
+        for i in range(1, 7):
+            segment_df = df_list[i]
+            if segment_df is not None and not segment_df.empty:
+                normalized_df = segment_df - baseline_mean
+                normalized_dict[participant].append(normalized_df)
+            else:
+                print(f"Segmento {i} vuoto per {participant}")
+                normalized_dict[participant].append(segment_df)
+
+    return normalized_dict
+
+
+# Funzione per estrarre le feature da una porzione di DataFrame
+def extract_facial_features(df, label):
+    # Liste delle colonne per tipo
+    emotion_cols = ["anger", "disgust", "fear", "happiness", "sadness", "surprise", "neutral"]
+    au_cols = [
+        "AU01", "AU02", "AU04", "AU05", "AU06", "AU07", "AU09", "AU10", "AU11", "AU12",
+        "AU14", "AU15", "AU17", "AU20", "AU23", "AU24", "AU25", "AU26", "AU28", "AU43"
+    ]
+    pose_cols = ["Pitch", "Roll", "Yaw"]
+    data = {}
+    
+    # Emotion features
+    for col in emotion_cols:
+        if col in df.columns:
+            values = df[col].values
+            data[f"{col}_Q1"] = np.percentile(values, 25)
+            data[f"{col}_Q2"] = np.percentile(values, 50)
+            data[f"{col}_Q3"] = np.percentile(values, 75)
+            data[f"{col}_SD"] = np.std(values)
+            data[f"{col}_TD"] = np.mean(df[col] == df[emotion_cols].max(axis=1))
+            max_run = (df[col] == df[emotion_cols].max(axis=1)).astype(int)
+            data[f"{col}_LD"] = max_run.groupby((max_run != max_run.shift()).cumsum()).transform('count').max() / len(max_run)
+            data[f"{col}_final_val"] = values[-1]
+            data[f"{col}_final_bin"] = int(col == df[emotion_cols].iloc[-1].idxmax())
+
+    # AU features
+    for col in au_cols:
+        if col in df.columns:
+            values = df[col].values
+            data[f"{col}_Q1"] = np.percentile(values, 25)
+            data[f"{col}_Q2"] = np.percentile(values, 50)
+            data[f"{col}_Q3"] = np.percentile(values, 75)
+            data[f"{col}_SD"] = np.std(values)
+            data[f"{col}_final"] = values[-1]
+
+    # Pose features
+    for col in pose_cols:
+        if col in df.columns:
+            values = df[col].values
+            data[f"{col}_Q1"] = np.percentile(values, 25)
+            data[f"{col}_Q2"] = np.percentile(values, 50)
+            data[f"{col}_Q3"] = np.percentile(values, 75)
+            data[f"{col}_SD"] = np.std(values)
+            data[f"{col}_final"] = values[-1]
+
+    return pd.Series(data, name=label)
+
+# Funzione per creare il dizionario richiesto
+def extract_feature_summary(normalized_dict):
+    feature_summary_dict = {}
+
+    for participant, df_list in normalized_dict.items():
+        # Indici:
+        # 1: game1_firstInterval
+        # 2: game1_secondInterval
+        # 3: game1_fullNoInterruption
+        # 4: game2_firstInterval
+        # 5: game2_secondInterval
+        # 6: game2_fullNoInterruption
+
+        game1 = pd.DataFrame([
+            extract_facial_features(df_list[1], "firstInterval"),
+            extract_facial_features(df_list[2], "secondInterval"),
+            extract_facial_features(df_list[3], "fullNoInterruption")
+        ])
+
+        game2 = pd.DataFrame([
+            extract_facial_features(df_list[4], "firstInterval"),
+            extract_facial_features(df_list[5], "secondInterval"),
+            extract_facial_features(df_list[6], "fullNoInterruption")
+        ])
+
+        feature_summary_dict[participant] = [game1, game2]
+
+    return feature_summary_dict

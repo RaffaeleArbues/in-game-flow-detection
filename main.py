@@ -1,10 +1,11 @@
 import src.EEG.preProcessing as pp
 import src.EEG.dataFrameEEG as dfe
-import src.EEG.corr as corrEEG
-import src.physiological.corr as corrPhys
-import src.questionnaire.dataFrameQuest as quest
+import EEG.corrEEG as corrEEG
 import src.physiological.dataFramePhysiological as phys
+import physiological.corrPeriferic as corrPhys
 import src.facialAnalysis.dataFrameFacial as face
+import facialAnalysis.corrFA as corrFace
+import src.questionnaire.dataFrameQuest as quest
 import pandas as pd
 import os
 import matplotlib.pyplot as plt
@@ -121,10 +122,41 @@ def main():
     #face.cut_ffmpeg_segments(path_to_video, log_file_path, output_video)
 
     # Opzionale: percorso dove salvare i risultati
-    output_folder = "D://Git//PARTECIPANTI Studio di Tesi - Dati Acquisizioni//rawDatasForPreProcessing//video//resultsFex"
+    # output_folder = "D://Git//PARTECIPANTI Studio di Tesi - Dati Acquisizioni//rawDatasForPreProcessing//video//resultsFex"
 
     # Esegui l'analisi
-    results = face.analyze_participant_videos(output_video, output_folder)
+    # results = face.analyze_participant_videos(output_video, output_folder)
+
+
+    video_path = "D://Git//PARTECIPANTI Studio di Tesi - Dati Acquisizioni//rawDatasForPreProcessing//df_Face"
+    segmentedFaceData = face.load_facial_data(video_path)
+    # Normalizzo tutti i dati
+    normalized_segmentedFaceData = face.normalize_with_baseline(segmentedFaceData)
+    # Estraggo le feature
+    faceFeatures = face.extract_feature_summary(normalized_segmentedFaceData)
+    print(faceFeatures)
+    df_noto_dict, df_ignoto_dict = quest.carica_questionari(path_to_quest)
+
+    df_final = corrFace.create_facial_flow_dataframe(faceFeatures, df_noto_dict, df_ignoto_dict)
+    # Lista delle colonne da mantenere
+    selected_columns = [
+        'Partecipant_ID', 'Tipo_Gioco', 'Intervallo', 'Flow', 'Normalized_Flow', 'anger_Q1', 'anger_Q2', 'anger_Q3', 'anger_SD', 'anger_TD', 'anger_LD',
+        'happiness_Q1', 'happiness_Q2', 'happiness_Q3', 'happiness_SD', 'happiness_TD', 'happiness_LD',
+        'surprise_Q1', 'surprise_Q2', 'surprise_Q3', 'surprise_SD', 'surprise_TD', 'surprise_LD',
+        'neutral_Q1', 'neutral_Q2', 'neutral_Q3', 'neutral_SD', 'neutral_TD', 'neutral_LD',
+        'AU06_Q1', 'AU06_Q2', 'AU06_Q3', 'AU06_SD',
+        'AU07_Q1', 'AU07_Q2', 'AU07_Q3', 'AU07_SD',
+        'AU12_Q1', 'AU12_Q2', 'AU12_Q3', 'AU12_SD',
+        'AU14_Q1', 'AU14_Q2', 'AU14_Q3', 'AU14_SD',
+        'Pitch_Q1', 'Pitch_Q2', 'Pitch_Q3', 'Pitch_SD',
+        'Roll_Q1', 'Roll_Q2', 'Roll_Q3', 'Roll_SD',
+        'Yaw_Q1', 'Yaw_Q2', 'Yaw_Q3', 'Yaw_SD'
+    ]
+
+    # Crea il sotto-dataset
+    df_finalMod = df_final[selected_columns].copy()
+
+    corrFace.run_mixed_models_face(df_finalMod)
 
     
 if __name__ == "__main__":

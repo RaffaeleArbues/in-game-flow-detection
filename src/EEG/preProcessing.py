@@ -1,18 +1,20 @@
 import os
-import json
 import zipfile
+
+# These functions are useful to fix the format of .json files dropped by neurosity SDK
 
 def extract_and_fix_json_files(directory_path):
     """
-    Estrae solo il file "power_by_band.json" dai file .zip presenti in una directory,
-    corregge il suo formato e restituisce il percorso del file JSON corretto.
+    Extracts only the "power_by_band.json" file from the .zip files in a directory,
+    fixes its formatting, and returns the path of the corrected JSON file.
 
-    Parametri:
-        directory_path (str): Percorso della directory contenente i file .zip.
+    Parameters:
+        directory_path (str): Path to the directory containing the .zip files.
 
-    Ritorna:
-        list: Una lista di percorsi assoluti dei file "power_by_band.json" corretti.
+    Returns:
+        list: A list of absolute paths to the corrected "power_by_band.json" files.
     """
+
     json_file_paths = []
 
     for file in os.listdir(directory_path):
@@ -33,13 +35,13 @@ def extract_and_fix_json_files(directory_path):
 
 def fix_json_format(file_path):
     """
-    Corregge il formato di un file JSON sostituendo '][' con '],['.
+    Fixes the format of a JSON file by replacing '][' with '],['.
 
-    Parametri:
-        file_path (str): Percorso del file JSON da correggere.
+    Parameters:
+        file_path (str): Path to the JSON file to be fixed.
 
-    Ritorna:
-        bool: True se il file è stato corretto, False altrimenti.
+    Returns:
+        bool: True if the file was successfully fixed, False otherwise.
     """
     try:
         with open(file_path, 'r') as f:
@@ -49,40 +51,10 @@ def fix_json_format(file_path):
             corrected_content = content.replace("][", ",")
             with open(file_path, 'w') as f:
                 f.write(corrected_content)
-            print(f"Corretto il formato del file: {file_path}")
+            print(f"Fixed the file: {file_path}")
             return True
 
     except Exception as e:
-        print(f"Errore durante la correzione di {file_path}: {e}")
+        print(f"Error occurring fixing {file_path}: {e}")
 
     return False
-
-'''
-def load_json_with_id(file_path, participant_id):
-    """
-    Carica i dati JSON da un file e aggiunge il participant ID solo al dizionario restituito.
-
-    Parametri:
-        file_path (str): Percorso del file JSON.
-        participant_id (str): ID del partecipante.
-
-    Ritorna:
-        dict or list: I dati JSON caricati con il participant ID aggiunto.
-    """
-    try:
-        with open(file_path, 'r') as f:
-            data = json.load(f)
-
-        # Aggiungi il participant ID ai dati JSON (solo nel dizionario restituito)
-        if isinstance(data, list):
-            for entry in data:
-                entry['participant_id'] = participant_id
-        elif isinstance(data, dict):
-            data['participant_id'] = participant_id
-
-        return data
-
-    except Exception as e:
-        print(f"Errore durante il caricamento di {file_path}: {e}")
-        return None
-'''

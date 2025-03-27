@@ -1,27 +1,50 @@
 import pandas as pd
-import numpy as np
 import rpy2
 import rpy2.robjects as ro
-from rpy2.robjects import pandas2ri
-
 
 def create_EEG_flow_dataframe(aggregated_amplitudes, df_noto_dict, df_ignoto_dict, method):
     """
-    Crea un DataFrame con le informazioni di partecipanti, tipo di gioco, intervallo, punteggio di flow
-    e valori dei sensori per ciascuna banda. Include anche il punteggio di flow normalizzato.
-    La funzione è stata modificata per integrare l'informazione della banda nei nomi delle colonne dei sensori.
+        Constructs a final DataFrame that links EEG amplitudes (for each frequency band and electrode),
+        subjective flow scores (from questionnaires), and metadata (participant ID, game type, interval).
+        This structure is used to analyze the relationship between EEG activity and perceived flow state.
 
-    Parametri:
-    - aggregated_amplitudes (dict): Dizionario con i DataFrame delle ampiezze EEG per ogni partecipante.
-    - df_noto_dict (dict): Dizionario con i dati dei questionari per il gioco noto.
-    - df_ignoto_dict (dict): Dizionario con i dati dei questionari per il gioco ignoto.
-    - method (str): Metodo di calcolo dell'ampiezza utilizzato.
+        The function takes EEG data (already aggregated by game and band), questionnaire responses
+        (split across intervals), and the amplitude method used ("rms" or "ptp").
 
-    Ritorna:
-    - DataFrame con i dati formattati secondo la struttura richiesta.
-    """    
-    
-    # Configurazione delle mappature
+        Main Steps:
+        1. Iterate over all participants to extract their raw flow scores from the questionnaires.
+        These scores are used to compute the mean and standard deviation per participant,
+        in order to normalize the flow values using Z-score normalization.
+
+        2. For each participant, for each of the three intervals (iGEQ_1, iGEQ_2, GEQ):
+        - Extract the corresponding EEG segment for both the known and unknown games.
+        - Compute the average flow score using specific questionnaire items.
+        - Normalize the flow score using the participant's own mean and standard deviation.
+        - Create a dictionary (row) that includes:
+            * Participant ID
+            * Game type (known/unknown)
+            * Interval type
+            * Raw and normalized flow score
+            * EEG amplitude values for each frequency band and sensor
+        - Append this row to the final dataset.
+
+        3. Once all rows are collected:
+        - A final DataFrame is created and sorted.
+        - The structure includes one row per game, per interval, per participant (6 rows total per participant).
+        - The final DataFrame is saved to "df_flow_eeg_data.csv" for further analysis.
+
+        Supporting Function:
+        - `calculate_flow_score(df_interval, questions)`: receives a questionnaire DataFrame and a list of question numbers,
+        and returns the average score given by the participant for those questions.
+
+        Notes:
+        - The function dynamically assigns the correct game order based on the participant's group (A or B).
+        - If any EEG or questionnaire data is missing or inconsistent, the corresponding row is skipped.
+        - The function is flexible and supports multiple amplitude extraction methods (e.g., ptp, rms).
+
+        Returns:
+        - A Pandas DataFrame with participant-wise, interval-wise EEG features and flow scores.
+    """
     interval_map = {
         0: "df_selfreport_1",
         1: "df_selfreport_2",
@@ -34,7 +57,7 @@ def create_EEG_flow_dataframe(aggregated_amplitudes, df_noto_dict, df_ignoto_dic
         2: "GEQ"    
     }
 
-    # Domande relative al flow per ciascun intervallo temporale
+    # Game Experience Questionnaire (both GEQ - 2 - and iGEQ - 0,1 - questions for Flow score)
     flow_questions = {
         0: [5, 10],
         1: [5, 10],
@@ -46,72 +69,71 @@ def create_EEG_flow_dataframe(aggregated_amplitudes, df_noto_dict, df_ignoto_dic
     
     all_data = []
     
-    # Dizionario per raccogliere temporaneamente tutti i punteggi di flow per ogni partecipante
+    # Dictionary to temporarily collect all flow scores for each participant
     participant_flow_scores = {}
     
-    # Prima passata: raccogli tutti i punteggi di flow per ogni partecipante
+    # Takes every participant's flow score
     for participant, games in aggregated_amplitudes.items():
-        # Determina il gruppo del partecipante (A o B)
+        # Check if participant belongs to the A or B group
         group_A = f"A_{participant}" in df_noto_dict
         group_B = f"B_{participant}" in df_noto_dict
         
         if not (group_A or group_B):
-            continue  # Partecipante non trovato nei dizionari
+            continue  # Participant not found
             
         participant_key = f"{'A' if group_A else 'B'}_{participant}"
         
-        # Per gruppo B, il gioco noto è game2 ma i questionari sono in df_noto_dict
+        # Assign the correct game order arrangement based on the participant's group affiliation (A or B). 
         game_noto_key = f"game{'1' if group_A else '2'}_{method}"
         game_ignoto_key = f"game{'2' if group_A else '1'}_{method}"
         
-        # Recupera i dataframe dei questionari
+        # retrive questionnaire dfs
         df_noto_q = df_noto_dict.get(participant_key)
         df_ignoto_q = df_ignoto_dict.get(participant_key)
         
         if df_noto_q is None or df_ignoto_q is None:
             continue
             
-        # Inizializza l'elenco dei punteggi per questo partecipante se non esiste
         if participant not in participant_flow_scores:
             participant_flow_scores[participant] = []
             
-        # Per ogni intervallo
+        # For each interval
         for interval_idx in range(3):
             interval_name = interval_map[interval_idx]
             
             if interval_name not in df_noto_q or interval_name not in df_ignoto_q:
                 continue
                 
-            # Dataframe dei questionari per questo intervallo
+            # Assigns questionnaire df fot this interval
             df_noto_interval = df_noto_q[interval_name]
             df_ignoto_interval = df_ignoto_q[interval_name]
             
-            # Calcola media flow per entrambi i giochi
+            # flow mean for both games
             flow_noto = calculate_flow_score(df_noto_interval, flow_questions[interval_idx])
             flow_ignoto = calculate_flow_score(df_ignoto_interval, flow_questions[interval_idx])
             
-            # Aggiungi i punteggi validi alla lista dei punteggi del partecipante (sia nel gioco noto che in quello ignoto)
+            # Add valid scores to the participant's scores list (for both game1 and game 2)
             if flow_noto is not None:
                 participant_flow_scores[participant].append(flow_noto)
             if flow_ignoto is not None:
                 participant_flow_scores[participant].append(flow_ignoto)
     
-    # Seconda passata: crea il dataframe con i punteggi normalizzati
+    # create df with normalized flow scores
     for participant, games in aggregated_amplitudes.items():
-        # Salta se non abbiamo raccolto punteggi per questo partecipante
+        # skip if we have not collected scores for this participant
         if participant not in participant_flow_scores or len(participant_flow_scores[participant]) < 2:
             continue
             
-        # Calcola media e deviazione standard per questo partecipante
+        # mean e standard deviation for this participant
         flow_scores = participant_flow_scores[participant]
         mean_flow = sum(flow_scores) / len(flow_scores)
         std_flow = (sum((x - mean_flow) ** 2 for x in flow_scores) / len(flow_scores)) ** 0.5
         
-        # Se la deviazione standard è 0, impostiamo un valore minimo per evitare divisione per zero
+        # If standard deviation is 0, we set a min value to avoid division by 0
         if std_flow == 0:
             std_flow = 1e-6
         
-        # Determina il gruppo del partecipante (A o B)
+        # determine the participant's group (A o B)
         group_A = f"A_{participant}" in df_noto_dict
         group_B = f"B_{participant}" in df_noto_dict
         
@@ -119,12 +141,10 @@ def create_EEG_flow_dataframe(aggregated_amplitudes, df_noto_dict, df_ignoto_dic
             continue
             
         participant_key = f"{'A' if group_A else 'B'}_{participant}"
-        
-        # Per gruppo B, il gioco noto è game2 ma i questionari sono in df_noto_dict
+    
         game_noto_key = f"game{'1' if group_A else '2'}_{method}"
         game_ignoto_key = f"game{'2' if group_A else '1'}_{method}"
         
-        # Recupera i dataframe
         df_noto = games.get(game_noto_key)
         df_ignoto = games.get(game_ignoto_key)
         df_noto_q = df_noto_dict.get(participant_key)
@@ -133,7 +153,7 @@ def create_EEG_flow_dataframe(aggregated_amplitudes, df_noto_dict, df_ignoto_dic
         if any(x is None or (isinstance(x, pd.DataFrame) and x.empty) for x in [df_noto, df_ignoto, df_noto_q, df_ignoto_q]):
             continue
 
-        # Per ogni intervallo
+        # For each interval
         for interval_idx in range(3):
             interval_name = interval_map[interval_idx]
             questionnaire_type = interval_to_questionnaire[interval_idx]
@@ -141,22 +161,20 @@ def create_EEG_flow_dataframe(aggregated_amplitudes, df_noto_dict, df_ignoto_dic
             if interval_name not in df_noto_q or interval_name not in df_ignoto_q:
                 continue
                 
-            # Dataframe dei questionari per questo intervallo
             df_noto_interval = df_noto_q[interval_name]
             df_ignoto_interval = df_ignoto_q[interval_name]
             
-            # Calcola media flow per entrambi i giochi
             flow_noto = calculate_flow_score(df_noto_interval, flow_questions[interval_idx])
             flow_ignoto = calculate_flow_score(df_ignoto_interval, flow_questions[interval_idx])
             
-            # Calcola i punteggi normalizzati usando la formula z-score: (x - μ) / σ
+            # apply z-score: (x - μ) / σ
             normalized_flow_noto = (flow_noto - mean_flow) / std_flow if flow_noto is not None else None
             normalized_flow_ignoto = (flow_ignoto - mean_flow) / std_flow if flow_ignoto is not None else None
             
             if flow_noto is None and flow_ignoto is None:
                 continue
                 
-            # Crea le righe per il dataframe con tutte le bande in un'unica riga
+            # Creates the rows for final df
             if flow_noto is not None:
                 row_noto = {
                     "Partecipant_ID": participant,
@@ -165,7 +183,7 @@ def create_EEG_flow_dataframe(aggregated_amplitudes, df_noto_dict, df_ignoto_dic
                     "Flow": flow_noto,
                     "Normalized_Flow": normalized_flow_noto
                 }
-                # Aggiungi i valori dei sensori per ogni banda
+                # Add the value for channel name for each band
                 for banda in bands:
                     try:
                         noto_eeg = df_noto[banda].iloc[interval_idx]
@@ -186,35 +204,34 @@ def create_EEG_flow_dataframe(aggregated_amplitudes, df_noto_dict, df_ignoto_dic
                     "Flow": flow_ignoto,
                     "Normalized_Flow": normalized_flow_ignoto
                 }
-                # Aggiungi i valori dei sensori per ogni banda
+                # Add the value for channel name for each band
                 for banda in bands:
                     try:
                         ignoto_eeg = df_ignoto[banda].iloc[interval_idx]
                         for i, sensor in enumerate(sensors):
                             row_ignoto[f"{sensor}_{banda}"] = ignoto_eeg[i]
                     except Exception as e:
-                        print(f"Errore con {participant}, intervallo {interval_idx}, banda {banda}: {e}")
+                        print(f"Error occurred for {participant}, interval {interval_idx}, band {banda}: {e}")
                         for i, sensor in enumerate(sensors):
                             row_ignoto[f"{sensor}_{banda}"] = None
                 
                 all_data.append(row_ignoto)
     
-    # Crea e salva il dataframe
     df_all_data = pd.DataFrame(all_data)
     
-    # Verifica che ci siano dati prima di salvare
+    # check if there's data in there
     if not df_all_data.empty:
         df_all_data = df_all_data.sort_values(by=["Partecipant_ID", "Tipo_Gioco"], ascending=[True, False])
 
         df_all_data.to_csv("df_flow_eeg_data.csv", index=False)
-        print(f"Dataframe creato con successo con {len(df_all_data)} righe.")
+        print(f"Dataframe successfully created with {len(df_all_data)} rows.")
     else:
-        print("ATTENZIONE: Il dataframe risultante è vuoto!")
+        print("WARNING: dataframe is empty!")
     
     return df_all_data
 
 def calculate_flow_score(df_interval, questions):
-    """Calcola il punteggio medio di flow per un set di domande."""
+    """Calculate the mean Flow score for a set of questions."""
     scores = []
     for q in questions:
         q_scores = df_interval.loc[df_interval["Domanda"].astype(str) == str(q), "Punteggio"].values
@@ -223,33 +240,32 @@ def calculate_flow_score(df_interval, questions):
     
     return sum(scores) / len(scores) if scores else None
 
-# Attiva la conversione automatica tra Pandas e R
+# Activates the automatic conversion between pandas and R
 rpy2.robjects.pandas2ri.activate()
 
 def run_mixed_models(df):
     """
-    Esegue il modello completo e i modelli per ogni banda (Alpha, Beta, Delta, Gamma, Theta) in R.
-    Calcola la devianza spiegata per ogni fixed effect e il power test.
-    Salva i risultati in file separati.
+        Runs the full model and individual models for each band (Alpha, Beta, Delta, Gamma, Theta) in R.
+        Calculates the explained deviance for each fixed effect and performs a power test.
+        Saves the results into separate files.
     """
-
-    # **Convertiamo Intervallo e Tipo_Gioco in numeri**
+    # converting Intervals and game type in numbers
     mapping_intervallo = {"iGEQ_1": 1, "iGEQ_2": 2, "GEQ": 3}
     mapping_tipo_gioco = {"Gioco_Noto": 1, "Gioco_Ignoto": 0}
 
     df["Intervallo"] = df["Intervallo"].map(mapping_intervallo)
     df["Tipo_Gioco"] = df["Tipo_Gioco"].map(mapping_tipo_gioco)
 
-    # **Rimuoviamo righe con NaN**
+    # Remove NaN rows
     df_cleaned = df.dropna()
 
     if df_cleaned.empty:
         raise ValueError("Errore: il DataFrame è vuoto dopo la rimozione dei NaN!")
 
-    # **Passa il DataFrame a R**
+    # passing DataFrame to R
     ro.globalenv['df'] = rpy2.robjects.pandas2ri.py2rpy(df_cleaned)
 
-    # **Esegui lo script R**
+    # executing the R script
     ro.r("""
         library(lme4)
         library(lmerTest)

@@ -1,13 +1,10 @@
 import pandas as pd
-import numpy as np
 import rpy2
 import rpy2.robjects as ro
 from rpy2.robjects import pandas2ri
-import src.EEG.corr as flowCal
-
+import EEG.corrEEG as flowCal
 
 def create_physiological_flow_dataframe(segmented_metrics_eda, segmented_metrics_bvp, df_noto_dict, df_ignoto_dict):
-    import pandas as pd
 
     # Mappature intervalli e questionari
     interval_map = {
