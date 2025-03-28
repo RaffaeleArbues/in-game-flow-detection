@@ -1,6 +1,7 @@
 import pandas as pd
 import rpy2
 import rpy2.robjects as ro
+from rpy2.robjects import pandas2ri
 
 def create_EEG_flow_dataframe(aggregated_amplitudes, df_noto_dict, df_ignoto_dict, method):
     """
@@ -8,8 +9,9 @@ def create_EEG_flow_dataframe(aggregated_amplitudes, df_noto_dict, df_ignoto_dic
         subjective flow scores (from questionnaires), and metadata (participant ID, game type, interval).
         This structure is used to analyze the relationship between EEG activity and perceived flow state.
 
-        The function takes EEG data (already aggregated by game and band), questionnaire responses
-        (split across intervals), and the amplitude method used ("rms" or "ptp").
+        The function takes EEG data (already aggregated by game and band, in a dictionary which has 2 df per key with 3rows (interval) x 6 col
+        (which are lists of 8 amplitudes, one value per channel)), questionnaire responses (split across intervals), 
+        and the amplitude method used ("rms" or "ptp").
 
         Main Steps:
         1. Iterate over all participants to extract their raw flow scores from the questionnaires.
@@ -249,6 +251,7 @@ def run_mixed_models(df):
         Calculates the explained deviance for each fixed effect and performs a power test.
         Saves the results into separate files.
     """
+
     # converting Intervals and game type in numbers
     mapping_intervallo = {"iGEQ_1": 1, "iGEQ_2": 2, "GEQ": 3}
     mapping_tipo_gioco = {"Gioco_Noto": 1, "Gioco_Ignoto": 0}
@@ -385,7 +388,7 @@ def run_mixed_models(df):
         }
     """)
 
-    print("Risultati salvati nei file:")
+    print("Results saved in these files:")
     print("- full_model_results.txt")
     print("- alpha_model_results.txt")
     print("- beta_model_results.txt")

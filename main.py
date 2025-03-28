@@ -1,10 +1,10 @@
 import src.EEG.preProcessing as pp
 import src.EEG.dataFrameEEG as dfe
-import EEG.corrEEG as corrEEG
+import src.EEG.corrEEG as corrEEG
 import src.physiological.dataFramePhysiological as phys
-import physiological.corrPeriferic as corrPhys
+import src.physiological.corrPeriferic as corrPhys
 import src.facialAnalysis.dataFrameFacial as face
-import facialAnalysis.corrFA as corrFace
+import src.facialAnalysis.corrFA as corrFace
 import src.questionnaire.dataFrameQuest as quest
 import pandas as pd
 import os
@@ -37,17 +37,18 @@ def main():
     # "1st", "2nd", "Full w/o Pauses", dove sono contenute le ampiezze, calcolate con RMS e PTP
     aggregated_rms = dfe.compute_aggregated_rms_amplitudes(normalized_segmented_dataframes, log_file_path)
     aggregated_ptp = dfe.compute_aggregated_ptp_amplitudes(normalized_segmented_dataframes, log_file_path)
+    print(aggregated_ptp)
 
     # dizionari con le chiavi che sono i "partecipant_id" e associati i dizionari df_selfreport_1, df_selfreport_2, df_selfreport_final (uno per i self del gioco noto, l'altro per il gioco ignoto).
-    df_noto_dict, df_ignoto_dict = quest.carica_questionari(path_to_quest)
+    #df_noto_dict, df_ignoto_dict = quest.carica_questionari(path_to_quest)
     #print(aggregated_rms)
 
     # Estrazione dei dataframe finali -> eeg con accanto i dati self report corrispondenti. (uno per le ampiezze ptp e l'altro per le ampiezze rms).
-    df_flow_ptp = corrEEG.create_EEG_flow_dataframe(aggregated_ptp, df_noto_dict, df_ignoto_dict, "ptp")
-    df_flow_rms = corrEEG.create_EEG_flow_dataframe(aggregated_rms, df_noto_dict, df_ignoto_dict, "rms")
+    #df_flow_ptp = corrEEG.create_EEG_flow_dataframe(aggregated_ptp, df_noto_dict, df_ignoto_dict, "ptp")
+    #df_flow_rms = corrEEG.create_EEG_flow_dataframe(aggregated_rms, df_noto_dict, df_ignoto_dict, "rms")
     
     # Calcolo dei mixed models
-    corrEEG.run_mixed_models(df_flow_rms)
+    #corrEEG.run_mixed_models(df_flow_rms)
 
     #correlation_ptp.to_csv("df_spearman_ptp.csv", index=False)
 
@@ -127,7 +128,7 @@ def main():
     # Esegui l'analisi
     # results = face.analyze_participant_videos(output_video, output_folder)
 
-
+    
     video_path = "D://Git//PARTECIPANTI Studio di Tesi - Dati Acquisizioni//rawDatasForPreProcessing//df_Face"
     segmentedFaceData = face.load_facial_data(video_path)
     # Normalizzo tutti i dati
@@ -157,7 +158,7 @@ def main():
     df_finalMod = df_final[selected_columns].copy()
 
     corrFace.run_mixed_models_face(df_finalMod)
-
+    ''''''
     
 if __name__ == "__main__":
     main()
