@@ -19,54 +19,25 @@ Throughout the sessions, participants completed the **Game Experience Questionna
 
 ## Study Pipeline
 
-The experimental protocol followed this structure:
+The experimental protocol was structured as follows:
 
-+-------------------------------------------+
-|         Physiological baseline            |
-|              (2 minutes)                  |
-+-------------------+-----------------------+
-                    |
-                    v
-+-------------------------------------------+
-|           Gameplay - Game 1               |
-|             (15 minutes)                  |
-|                                           |
-|   → In-game GEQ at minute 5               |
-|   → In-game GEQ at minute 10              |
-+-------------------+-----------------------+
-                    |
-                    v
-+-------------------------------------------+
-|             Post-game GEQ                 |
-+-------------------+-----------------------+
-                    |
-                    v
-+-------------------------------------------+
-|       Second physiological baseline       |
-|                (2 minutes)                |
-+-------------------+-----------------------+
-                    |
-                    v
-+-------------------------------------------+
-|           Gameplay - Game 2               |
-|             (15 minutes)                  |
-|                                           |
-|   → In-game GEQ at minute 5               |
-|   → In-game GEQ at minute 10              |
-+-------------------+-----------------------+
-                    |
-                    v
-+-------------------------------------------+
-|             Post-game GEQ                 |
-+-------------------+-----------------------+
-                    |
-                    v
-+-------------------------------------------+
-|     Final baseline (relaxation phase)     |
-+-------------------+-----------------------+
-                    |
-                    v
-                 [ End ]
+1. **Physiological baseline** (2 minutes)
+
+2. **Gameplay – Game 1** (15 minutes)  
+   - In-game GEQ at minute 5  
+   - In-game GEQ at minute 10
+
+3. **Post-game GEQ** (Game 1)
+
+4. **Second physiological baseline** (2 minutes)
+
+5. **Gameplay – Game 2** (15 minutes)  
+   - In-game GEQ at minute 5  
+   - In-game GEQ at minute 10
+
+6. **Post-game GEQ** (Game 2)
+
+7. **Final baseline** (relaxation phase)
 
 > Note: Game 1 and 2 is either the familiar or unfamiliar game depending on participant group. The order is counterbalanced.
 
@@ -90,28 +61,33 @@ This analysis aimed to identify potential correlations between the collected bio
 
 > Note: The **Game Experience Questionnaire (GEQ)** includes specific items categorized under the "Flow" dimension, which were used as reference points in the analysis.
 
-## Project Structure (Visual Diagram)
+## Project Structure
 
-src/
-├── EEG/
-│   ├── corrEEG.py
-│   ├── dataFrameEEG.py
-│   └── preProcessing.py
-│       ─> EEG preprocessing, segmentation, feature extraction, and correlation analysis
-│
-├── facialAnalysis/
-│   ├── corrFA.py
-│   └── dataFrameFacial.py
-│       ─> Processing and correlating facial features (action units, emotions, head pose)
-│
-├── physiological/
-│   ├── corrPeriferic.py
-│   └── dataFramePhysiological.py
-│       ─> Processing and correlating peripheral signals (EDA, BVP)
-│
-├── questionnaire/
-│   └── dataFrameQuest.py
-│       ─> Parsing and organizing self-report questionnaire data (GEQ, iGEQ)
+The project is organized into the following main components:
+
+### `src/EEG/`
+- `corrEEG.py`  
+  → Correlation analysis between EEG features and flow scores  
+- `dataFrameEEG.py`  
+  → EEG data segmentation, normalization, and feature extraction  
+- `preProcessing.py`  
+  → Preprocessing of raw EEG signals  
+
+### `src/facialAnalysis/`
+- `corrFA.py`  
+  → Correlation analysis between facial features and flow scores  
+- `dataFrameFacial.py`  
+  → Processing of facial data (action units, emotions, head pose)  
+
+### `src/physiological/`
+- `corrPeriferic.py`  
+  → Correlation of peripheral signals (EDA, BVP) with flow scores  
+- `dataFramePhysiological.py`  
+  → Processing and feature extraction for peripheral biosignals  
+
+### `src/questionnaire/`
+- `dataFrameQuest.py`  
+  → Parsing and structuring of
 
 # EEG Data Analysis Pipeline
 
