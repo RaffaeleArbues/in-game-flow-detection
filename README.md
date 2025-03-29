@@ -1,3 +1,118 @@
+## Project Overview
+
+This project is an exploratory work aimed at establishing an experimental protocol for measuring the state of **Flow** in video games.  
+The concept of flow was introduced by **Mihály Csíkszentmihályi**, who defined it as a psychological state characterized by deep involvement in an activity, during which a person experiences a high level of concentration and intrinsic motivation.  
+The context of video games is particularly suitable for measuring this condition, as it is standardized, repeatable, and allows for a rigorous analysis of the phenomenon.
+
+---
+
+## Experimental Protocol
+
+Participants were asked to play two different games:
+
+- One **familiar game**, chosen by each participant during recruitment.
+- One **unfamiliar game**, developed by students and unknown to the participant.
+
+Throughout the sessions, participants completed the **Game Experience Questionnaire (GEQ)** to self-report their experience of flow. The GEQ is a widely used tool in the gaming research field to assess subjective experience during gameplay.
+
+---
+
+## Study Pipeline
+
+The experimental protocol followed this structure:
+
++-------------------------------------------+
+|         Physiological baseline            |
+|              (2 minutes)                  |
++-------------------+-----------------------+
+                    |
+                    v
++-------------------------------------------+
+|           Gameplay - Game 1               |
+|             (15 minutes)                  |
+|                                           |
+|   → In-game GEQ at minute 5               |
+|   → In-game GEQ at minute 10              |
++-------------------+-----------------------+
+                    |
+                    v
++-------------------------------------------+
+|             Post-game GEQ                 |
++-------------------+-----------------------+
+                    |
+                    v
++-------------------------------------------+
+|       Second physiological baseline       |
+|                (2 minutes)                |
++-------------------+-----------------------+
+                    |
+                    v
++-------------------------------------------+
+|           Gameplay - Game 2               |
+|             (15 minutes)                  |
+|                                           |
+|   → In-game GEQ at minute 5               |
+|   → In-game GEQ at minute 10              |
++-------------------+-----------------------+
+                    |
+                    v
++-------------------------------------------+
+|             Post-game GEQ                 |
++-------------------+-----------------------+
+                    |
+                    v
++-------------------------------------------+
+|     Final baseline (relaxation phase)     |
++-------------------+-----------------------+
+                    |
+                    v
+                 [ End ]
+
+> Note: Game 1 and 2 is either the familiar or unfamiliar game depending on participant group. The order is counterbalanced.
+
+## Data Collection and Analysis
+
+During the experimental protocol, participants were equipped with:
+
+- A **Neurosity Crown** headset for recording brain biosignals (EEG).
+- An **Empatica EmbracePlus** wristband for acquiring peripheral biosignals such as Electrodermal Activity (EDA) and Blood Volume Pulse (BVP).
+- A **webcam** for recording facial expressions.
+
+All biosignals were preprocessed according to their specific characteristics, including:
+
+- Adapting to the output file structure
+- Noise reduction and signal cleaning
+- Personalized normalization per participant
+- Feature extraction on specific gameplay segments
+
+After preprocessing, each type of signal was analyzed statistically using a **linear mixed model**, incorporating data extracted from the self-report questionnaires.  
+This analysis aimed to identify potential correlations between the collected biosignals and the subjective experience reported by participants.
+
+> Note: The **Game Experience Questionnaire (GEQ)** includes specific items categorized under the "Flow" dimension, which were used as reference points in the analysis.
+
+## Project Structure (Visual Diagram)
+
+src/
+├── EEG/
+│   ├── corrEEG.py
+│   ├── dataFrameEEG.py
+│   └── preProcessing.py
+│       ─> EEG preprocessing, segmentation, feature extraction, and correlation analysis
+│
+├── facialAnalysis/
+│   ├── corrFA.py
+│   └── dataFrameFacial.py
+│       ─> Processing and correlating facial features (action units, emotions, head pose)
+│
+├── physiological/
+│   ├── corrPeriferic.py
+│   └── dataFramePhysiological.py
+│       ─> Processing and correlating peripheral signals (EDA, BVP)
+│
+├── questionnaire/
+│   └── dataFrameQuest.py
+│       ─> Parsing and organizing self-report questionnaire data (GEQ, iGEQ)
+
 # EEG Data Analysis Pipeline
 
 ## Overview
