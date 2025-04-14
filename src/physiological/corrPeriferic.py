@@ -208,6 +208,15 @@ def run_physiological_mixed_model(df):
     df["Intervallo"] = df["Intervallo"].map(mapping_intervallo)
     df["Tipo_Gioco"] = df["Tipo_Gioco"].map(mapping_tipo_gioco)
 
+    # Standardizzazione (Z-score) delle variabili indipendenti
+    exclude_cols = ['Partecipant_ID', 'Intervallo', 'Tipo_Gioco', 'Flow', 'Normalized_Flow']
+    numeric_cols = [col for col in df.columns if col not in exclude_cols and df[col].dtype in [float, int]]
+
+    for col in numeric_cols:
+        mean = df[col].mean()
+        std = df[col].std()
+        df[col] = (df[col] - mean) / std
+
     # Remove NaN rows
     df_cleaned = df.dropna()
     if df_cleaned.empty:
